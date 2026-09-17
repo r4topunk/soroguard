@@ -121,9 +121,24 @@ export type ChecklistItem = {
 export type ValidationReport = {
   document: "threat-model" | "monitoring-plan";
   items: ChecklistItem[];
-  /** o documento está completo o suficiente para submissão? */
+  /** o documento está completo o suficiente para submissão? Igual a `verdict === "submittable"`. */
   submittable: boolean;
+  /** o que a FERRAMENTA deveria ter cumprido e não cumpriu (tier inflado, monitor órfão, …) */
   blockers: string[];
+  /**
+   * Três estados, porque dois mentiam. `not-submittable` é falha da ferramenta ou afirmação
+   * insustentável; `needs-input` é documento correto que ainda espera o que só a equipe tem
+   * (letra do STRIDE por preencher, dono e canal, hash a registrar, a §1 do template);
+   * `submittable` é o resto. Campo opcional e aditivo — quem lê só `submittable` continua
+   * funcionando, porque `submittable === (verdict === "submittable")`.
+   */
+  verdict?: "submittable" | "needs-input" | "not-submittable";
+  /**
+   * Bloqueios de submissão que NENHUMA análise fecharia: só um humano os fecha. Ficam fora de
+   * `blockers` de propósito — misturá-los faz um documento correto parecer defeituoso, que é
+   * como um veredito honesto perde o leitor.
+   */
+  needsInput?: string[];
 };
 
 /* ---------- helpers compartilhados ---------- */

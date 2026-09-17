@@ -14,8 +14,10 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { analyzeModule, requiresAuth, writesStorage, emitsEvent, canUpgradeSelf, callsOut } from "./analyze.ts";
+import { probeInitFindings } from "./probe.ts";
+import type { ProbeResult } from "./probe.ts";
 import { detectFull, lacunas, fronteiras, delegacoes } from "./detect.ts";
-import { fetchWasm, modelFromEntries, parseSpecEntries, NETWORKS } from "./spec.ts";
+import { fetchWasm, modelFromEntries, parseSpecEntries, NETWORKS, redactUrl } from "./spec.ts";
 import { readSdkMeta, advisoriesForWasm, ADVISORIES_AS_OF } from "./sdkver.ts";
 import { setLang, parseLang, msgs } from "./i18n.ts";
 
@@ -35,6 +37,11 @@ function versaoDoPacote(): string {
 }
 const SERVER_VERSION = versaoDoPacote();
 
+/**
+ * `network` aqui só pode ser um NOME (o schema da ferramenta é um enum sobre `NETWORKS`),
+ * então nenhuma URL de RPC entra por aqui. A redação de `redactUrl` na saída de erro cobre
+ * o resto: a mensagem do SDK embute a URL que ele chamou.
+ */
 async function carregar(alvo: string, network: string): Promise<Uint8Array> {
   return alvo.endsWith(".wasm") ? new Uint8Array(readFileSync(alvo)) : (await fetchWasm(alvo, network)).wasm;
 }
@@ -50,6 +57,8 @@ const M = msgs({
     argTarget: "contract id (C… , 56 chars) of a deployed contract, or the path to a local .wasm file",
     argNetwork: "network to resolve the contract id on; ignored when target is a local .wasm path",
     argMinSeverity: "drop findings below this severity",
+    argProbe:
+      "probe each init finding with an unsigned, read-only simulateTransaction and return the result under `probes` (deployed target only; never signs or submits). Set false to skip the network round-trip.",
     descInspect:
       "Reads the contract spec of a DEPLOYED Soroban contract (straight from the WASM on mainnet/testnet, no source code needed). Returns the typed functions with their parameters, the declared error enums, and the events declared in the spec with their prefixTopics — which are the actual filters of a getEvents call.",
     descAnalyze:
@@ -74,6 +83,8 @@ const M = msgs({
     argTarget: "contract id (C… , 56 chars) de um contrato deployado, ou o caminho de um .wasm local",
     argNetwork: "rede em que resolver o contract id; ignorado quando o target é o caminho de um .wasm local",
     argMinSeverity: "descarta achados abaixo desta severidade",
+    argProbe:
+      "sonda cada achado de init com uma simulateTransaction não assinada e read-only, e devolve o resultado em `probes` (só com alvo deployado; nunca assina nem submete). Use false para pular a ida à rede.",
     descInspect:
       "Lê o contract spec de um contrato Soroban DEPLOYADO (direto do WASM em mainnet/testnet, sem precisar do código-fonte). Devolve as funções tipadas com seus parâmetros, os enums de erro declarados e os eventos declarados no spec com seus prefixTopics — que são os filtros reais de uma chamada getEvents.",
     descAnalyze:
@@ -125,6 +136,7 @@ const ferramentas = () => [
         target: { type: "string", description: M.argTarget },
         network: { type: "string", enum: Object.keys(NETWORKS), default: "mainnet", description: M.argNetwork },
         minSeverity: { type: "string", enum: ["Low", "Medium", "High", "Critical"], default: "Low", description: M.argMinSeverity },
+        probe: { type: "boolean", default: true, description: M.argProbe },
         lang: langArg(),
       },
       required: ["target"],
@@ -194,6 +206,19 @@ async function chamar(nome: string, a: any): Promise<string> {
     case "soroguard_analyze": {
       const an = analyzeModule(wasm);
       const { findings, suppressed } = detectFull(an, wasm);
+      // Sondagem de init (nível B): só com alvo deployado, e nunca assinando nada. Offline
+      // (alvo `.wasm` local) não tem instância on-chain para sondar, e o payload sai sem o
+      // campo em vez de sair com um `probes: {}` que pareceria "sondei e não achei nada".
+      let probes: Record<string, ProbeResult> | undefined;
+      if (!a.target.endsWith(".wasm") && a.probe !== false) {
+        const entries = parseSpecEntries(wasm);
+        const { errors } = modelFromEntries(entries);
+        const r = await probeInitFindings({
+          contractId: a.target, findings, specEntries: entries, errors,
+          endpoint: net, rede: /:\/\//.test(net) ? "mainnet" : net,
+        });
+        if (r.size) probes = Object.fromEntries(r);
+      }
       const ordem = ["Low", "Medium", "High", "Critical"];
       const corte = ordem.indexOf(a.minSeverity ?? "Low");
       const achados = findings.filter((f) => ordem.indexOf(f.severity) >= corte);
@@ -208,6 +233,7 @@ async function chamar(nome: string, a: any): Promise<string> {
             canUpgradeSelf: canUpgradeSelf(e), crossCall: callsOut(e),
           })),
           findings: achados,
+          ...(probes ? { probes } : {}),
           // `motivo` é o nome do campo interno (usado por scripts/calibrate.mjs); na API
           // pública ele sai como `reason`.
           suppressed: suppressed.map((s) => ({ entrypoint: s.entrypoint, reason: s.motivo })),
@@ -273,7 +299,7 @@ async function despachar(r: Req): Promise<void> {
     // conteúdo com isError, que é o que o MCP manda o modelo ver e corrigir.
     if (e instanceof RpcError) return erro(e.code, e.message);
     if (temId) {
-      escrever({ jsonrpc: "2.0", id: r.id, result: { content: [{ type: "text", text: M.erroExecucao((e as Error).message) }], isError: true } });
+      escrever({ jsonrpc: "2.0", id: r.id, result: { content: [{ type: "text", text: M.erroExecucao(redactUrl((e as Error).message)) }], isError: true } });
     }
   }
 }

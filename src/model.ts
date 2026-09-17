@@ -1,5 +1,7 @@
 /** Modelo intermediário: tudo que conseguimos saber sobre um contrato antes de raciocinar sobre ameaças. */
 
+import type { ProbeResult } from "./probe.ts";
+
 export type Param = { name: string; type: string };
 
 export type Fn = {
@@ -43,6 +45,18 @@ export type ObservedEvent = {
   lastLedger: number;
 };
 
+/**
+ * O que FECHOU a janela de observação. Sem isto o documento apresenta 32 h e 375 h com a
+ * mesma cara, e o revisor lê a janela curta como "contrato parado" em vez de "contrato
+ * denso demais para o orçamento de paginação" — que é o caso exatamente nos contratos
+ * mais movimentados (docs/PRECISION-TOP25.md).
+ *
+ *  - `retention`: pedimos tudo que o RPC retém e varremos até o topo. O limite é o RPC.
+ *  - `request-budget`: o orçamento de requisições acabou antes do range pedido.
+ *  - `none`: a janela pedida coube inteira; ninguém cortou nada.
+ */
+export type WindowLimitedBy = "retention" | "request-budget" | "none";
+
 export type ContractModel = {
   contractId: string;
   network: string;
@@ -55,6 +69,21 @@ export type ContractModel = {
   events: EventDecl[];
   observed: ObservedEvent[];
   observedWindow?: { fromLedger: number; toLedger: number; ledgers: number };
+  /**
+   * Campos aditivos que NÃO cabem em `artifact.ts` (contrato congelado). `ObservationWindow`
+   * e `Observations` são tipos congelados lá; carregá-los aqui, no modelo que já viaja em
+   * `ctx.spec`, é a rota menos invasiva — nenhum consumidor existente precisa mudar e
+   * nenhum estado ambiente (WeakMap por ctx) entra no caminho, o que manteria a saída
+   * dependente de identidade de objeto e não do dado.
+   */
+  windowLimitedBy?: WindowLimitedBy;
+  /** páginas de `getEvents` efetivamente gastas na coleta (prova do orçamento) */
+  windowPagesUsed?: number;
+  /**
+   * Sondagens de nível B por id de achado (`Elevation.1` → resultado). Mesma justificativa
+   * dos campos acima: `ArtifactContext` é congelado, `ContractModel` é aditivo.
+   */
+  probes?: Record<string, ProbeResult>;
   specEntryCounts: Record<string, number>;
   warnings: string[];
 };

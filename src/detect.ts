@@ -1,5 +1,6 @@
 import type { Entrypoint, ModuleAnalysis } from "./analyze.ts";
-import { STORAGE_WRITE_FNS, STORAGE_READ_FNS } from "./hostfns.ts";
+import { STORAGE_WRITE_FNS, STORAGE_READ_FNS, SIG_SCHEME_FNS } from "./hostfns.ts";
+import { parseSpecEntries, modelFromEntries } from "./spec.ts";
 import { readSdkMeta, advisoriesForWasm, evaluateVersion, ADVISORIES_AS_OF } from "./sdkver.ts";
 import { PRNG_FNS } from "./hostfns.ts";
 import { msgs, plural } from "./i18n.ts";
@@ -90,6 +91,41 @@ const M = msgs({
       `${k} read-shaped ${plural(k, "entrypoint", "entrypoints")} that reach a write through a shared helper were excluded from the count (both numerator and denominator): ${lista}. Emitting events from a quoting getter is not the remediation.`,
     infSilent:
       "Without an event there is no off-chain proof that the action happened, and the change is only detectable by state diff — which makes real-time monitoring of those actions unfeasible.",
+    /**
+     * A severidade vem da CLASSE da ação silenciosa, não da fração silent/mutadores.
+     * Medido em docs/PRECISION-TOP25.md: `2 de 2` num bot anônimo saía High enquanto um
+     * `upgrade` sem evento num fundo regulado saía Medium. Fração não é impacto.
+     */
+    regraSeveridadeSilent: (sev: string, decisores: string, initOnly: boolean) =>
+      `Severity rule applied (class of the silent action, not the silent/state-changing fraction): High when any silent entrypoint is upgrade-capable or admin/permission-shaped by name; Low when every silent entrypoint is an init-shaped one-shot; Medium otherwise. Here: ${
+        decisores
+          ? `deciding entrypoints = ${decisores}`
+          : initOnly
+            ? "every silent entrypoint is init-shaped"
+            : "no upgrade-capable or admin/permission-shaped silent entrypoint"
+      } → ${sev}.`,
+    evSilentDecisores: (lista: string) =>
+      `Of those, upgrade-capable or admin/permission-shaped by name (listed first above): ${lista}.`,
+
+    /* D10 — escrita de terceiro por chamador arbitrário */
+    tituloTampering: (nome: string) =>
+      `\`${nome}\` lets an arbitrary caller reach a state write while taking an address as a parameter`,
+    evTamperParams: (nome: string, lista: string) =>
+      `The \`contractspecv0\` spec declares ${plural(lista.split(", ").length, "address parameter", "address parameters")} on \`${nome}\`: ${lista}.`,
+    infTamperTaint:
+      "The write may touch only the caller's own record — that is not derivable here, because it would require taint from the parameter to the storage key; confirm in source. If the key does derive from the address parameter, any caller can write into a third party's record, which is Tampering rather than privilege elevation.",
+
+    /* D11 — verificação de assinatura implementada no contrato */
+    tituloSigVerif:
+      "The contract implements signature verification of its own, outside the host's `require_auth` framework",
+    evSigSimbolos: (lista: string) =>
+      `Spec symbols matching the signature-scheme pattern (domain/type hash, nonce, permit, signature): ${lista}.`,
+    evSigErros: (lista: string) => `Error enum variants of a signature scheme: ${lista}.`,
+    evSigCrypto: (lista: string) => `Entrypoints reach crypto host functions: ${lista}.`,
+    evSigSemCrypto: (n: number) =>
+      `No crypto host function is reachable from any export; the classification rests on ${n} spec symbol matches.`,
+    infSigVerif:
+      "Authorization is implemented inside the contract, outside the host's `require_auth` framework; the Spoofing surface (replay, expiry, key rotation) is not covered by the auth detector — review the verifier.",
 
     /* D7 — TTL */
     tituloTtl: "No entrypoint of the contract extends storage TTL",
@@ -98,6 +134,8 @@ const M = msgs({
     evTtlNenhum: "No entrypoint of the contract reaches the extend_*_ttl family.",
     infTtl:
       "Persistent/instance entries are archived at the end of their TTL and the state becomes inaccessible. This is only acceptable if all storage is temporary by design — which is not derivable from the bytecode, because durability is a runtime argument.",
+    infTtlDurabilidade:
+      "Declared gap on the impact: it depends on the durability of each entry — a persistent entry archived at the end of its TTL is restorable through the restore footprint of a later transaction, a temporary entry is lost for good, and an instance entry follows the contract instance. Durability is a runtime argument of put_contract_data and is not read from the bytecode here, so the severity is Medium and the gap is declared rather than resolved.",
 
     /* D-PRNG */
     avisoHelperPrng: (hops: number) =>
@@ -209,12 +247,42 @@ const M = msgs({
       `${k} entrypoint(s) com nome de leitura que alcançam escrita por helper compartilhado foram excluídos da conta (numerador e denominador): ${lista}. Emitir evento em getter de cotação não é a remediação.`,
     infSilent:
       "Sem evento não há prova off-chain de que a ação ocorreu, e a mudança só é detectável por diff de estado — o que inviabiliza monitoramento em tempo real dessas ações.",
+    regraSeveridadeSilent: (sev: string, decisores: string, initOnly: boolean) =>
+      `Regra de severidade aplicada (classe da ação silenciosa, não a fração mudos/mutadores): High quando algum entrypoint mudo pode trocar o próprio código ou tem nome de admin/permissão; Low quando todos os entrypoints mudos são one-shots com nome de init; Medium no resto. Aqui: ${
+        decisores
+          ? `entrypoints decisores = ${decisores}`
+          : initOnly
+            ? "todos os entrypoints mudos têm nome de init"
+            : "nenhum entrypoint mudo troca código nem tem nome de admin/permissão"
+      } → ${sev}.`,
+    evSilentDecisores: (lista: string) =>
+      `Destes, os que trocam o próprio código ou têm nome de admin/permissão (listados primeiro acima): ${lista}.`,
+
+    tituloTampering: (nome: string) =>
+      `\`${nome}\` permite que um chamador arbitrário alcance escrita de estado recebendo um endereço como parâmetro`,
+    evTamperParams: (nome: string, lista: string) =>
+      `O spec \`contractspecv0\` declara ${plural(lista.split(", ").length, "parâmetro de endereço", "parâmetros de endereço")} em \`${nome}\`: ${lista}.`,
+    infTamperTaint:
+      "A escrita pode tocar apenas o registro do próprio chamador — isso não é determinável aqui, porque exigiria taint do parâmetro até a chave de storage; confirmar no fonte. Se a chave derivar do parâmetro de endereço, qualquer chamador escreve no registro de um terceiro, o que é Tampering e não elevação de privilégio.",
+
+    tituloSigVerif:
+      "O contrato implementa verificação de assinatura própria, fora do framework `require_auth` do host",
+    evSigSimbolos: (lista: string) =>
+      `Símbolos do spec que casam o padrão de esquema de assinatura (domain/type hash, nonce, permit, signature): ${lista}.`,
+    evSigErros: (lista: string) => `Variantes do enum de erro típicas de esquema de assinatura: ${lista}.`,
+    evSigCrypto: (lista: string) => `Entrypoints alcançam host functions de cripto: ${lista}.`,
+    evSigSemCrypto: (n: number) =>
+      `Nenhuma host function de cripto é alcançável de algum export; a classificação se apoia em ${n} símbolos do spec.`,
+    infSigVerif:
+      "A autorização é implementada dentro do contrato, fora do framework `require_auth` do host; a superfície de Spoofing (replay, expiração, rotação de chave) não é coberta pelo detector de auth — revisar o verificador.",
 
     tituloTtl: "Nenhum entrypoint do contrato estende TTL de storage",
     evTtlEscrevem: (n: number, lista: string) => `${n} entrypoints alcançam put_contract_data: ${lista}.`,
     evTtlNenhum: "Nenhum entrypoint do contrato alcança a família extend_*_ttl.",
     infTtl:
       "Entradas persistentes/instance são arquivadas ao fim do TTL e o estado fica inacessível. Só é aceitável se todo o storage for temporary por design — o que não é determinável do bytecode, porque a durabilidade é argumento em runtime.",
+    infTtlDurabilidade:
+      "Lacuna declarada sobre o impacto: ele depende da durabilidade de cada entrada — uma entrada persistent arquivada ao fim do TTL é restaurável pelo restore footprint de uma transação posterior, uma entrada temporary é perdida de vez, e uma entrada instance acompanha a instância do contrato. A durabilidade é argumento em runtime de put_contract_data e não é lida do bytecode aqui, por isso a severidade é Medium e a lacuna fica declarada em vez de resolvida.",
 
     avisoHelperPrng: (hops: number) =>
       `⚠ REVISAR: o caminho até o PRNG tem ${hops} saltos e provavelmente passa por helper compartilhado. A alcançabilidade super-aproxima o positivo — a chamada pode estar num ramo que este entrypoint nunca executa. Confirmar antes de tratar como achado.`,
@@ -280,6 +348,12 @@ export type Finding = {
   evidence: Evidence[];
   /** inferência — por isso é sempre nível C */
   severity: "Critical" | "High" | "Medium" | "Low";
+  /**
+   * Família do achado (`init`, `auth`, `silent`, `ttl`, `sdk`, …). Agrupa classes que um
+   * renderizador pode agregar quando o mesmo fato se repete. Opcional e aditivo: quem
+   * consome `Finding` hoje continua funcionando sem lê-lo.
+   */
+  family?: string;
   /** false quando `call_indirect` no subgrafo impede afirmar a negativa */
   sound: boolean;
   /**
@@ -335,6 +409,95 @@ const CRANK = /^(sync|gulp|poke|observe|crank|tick|harvest|accrue|refresh|backfi
 const INIT_LIKE = /^(initialize|init|setup|bootstrap)(_|$)/i;
 
 /**
+ * Ação privilegiada por nome: troca de dono, de permissão, de código, de taxa ou de config.
+ * Existe para a severidade de `silent-mutation` sair da CLASSE da ação e não da fração
+ * mudos/mutadores — a inversão medida em docs/PRECISION-TOP25.md ("2 de 2" num bot anônimo
+ * saía High; um `upgrade` sem evento num fundo regulado saía Medium).
+ */
+const ADMIN_SHAPED =
+  /^(set_admin|transfer_admin|propose_admin|accept_admin|set_owner|transfer_ownership|upgrade|set_permission|grant|revoke|set_.*role|add_signer|remove_signer|update_signer|pause|unpause|kill|set_fee|set_.*config)(_|$)/i;
+
+/**
+ * Símbolos do spec que delatam um verificador de assinatura escrito no contrato.
+ * `permit` exige início de palavra: sem isso `NotPermitted` — erro de autorização comum,
+ * medido no corpus — casava e virava achado de esquema de assinatura que não existe.
+ */
+const SIG_SYMBOL = /domain_?hash|type_?hash|nonce|(?<![A-Za-z])permit|verify_?sig|signature/i;
+/** Variantes de erro do mesmo esquema — replay, expiração, assinatura inválida. */
+const SIG_ERR = /InvalidSignature|SignatureExpired|BadSignature|InvalidNonce|NonceUsed/i;
+
+/* ------------------------------------------------------------------ *
+ * Leitura do spec (`contractspecv0`).
+ *
+ * Dois detectores precisam do que só o spec diz: quais parâmetros são `Address` (D10) e
+ * quais símbolos o contrato exporta (D11). A leitura é read-only e tolerante — spec ausente
+ * ou ilegível desliga os dois detectores em vez de derrubar a análise, porque o resto do
+ * laudo é fato de bytecode e não depende dela.
+ * ------------------------------------------------------------------ */
+
+type SpecInfo = {
+  /** export → nomes dos parâmetros do tipo `address` declarados no spec */
+  addressParams: Map<string, string[]>;
+  /** nomes de funções, UDTs, campos/casos e enums de erro */
+  symbols: string[];
+  /** variantes do enum de erro, separadas porque casam um padrão próprio */
+  errCases: string[];
+};
+
+/** `decodeStream(..., "raw")` devolve objeto plano; a API de união devolve métodos. Lemos os dois. */
+const chamar = (o: any, k: string): any => (typeof o?.[k] === "function" ? o[k]() : o?.[k]);
+const nomeDe = (v: any): string => {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (Buffer.isBuffer(v)) return v.toString();
+  if (v.bytes) return Buffer.from(v.bytes).toString();
+  if (typeof v.name === "string") return v.name;
+  return String(v);
+};
+
+/** Nomes de UDT (struct/union/enum) e de seus campos/casos — `modelFromEntries` só devolve fns e erros. */
+function nomesDeUdt(entries: unknown[]): string[] {
+  const out: string[] = [];
+  for (const e of entries as any[]) {
+    const bruto = typeof e?.switch === "function" ? e.switch() : (e?.type ?? e?.kind);
+    const kind = String(typeof bruto === "string" ? bruto : (bruto?.name ?? bruto));
+    // Enums de erro já vêm por `modelFromEntries`; incluí-los aqui contava o mesmo nome
+    // duas vezes e inflava a contagem de "casamento forte" (≥2) com um único símbolo.
+    if (!/^scSpecEntryUdt/.test(kind) || /UdtErrorEnum/.test(kind)) continue;
+    const payload = chamar(e, kind.replace(/^scSpecEntry/, "").replace(/^./, (c) => c.toLowerCase()));
+    const n = nomeDe(chamar(payload, "name"));
+    if (n) out.push(n);
+    for (const campo of (chamar(payload, "fields") ?? chamar(payload, "cases") ?? []) as any[]) {
+      const cn = nomeDe(chamar(campo, "name"));
+      if (cn) out.push(cn);
+    }
+  }
+  return out;
+}
+
+export function lerSpec(wasm: Uint8Array): SpecInfo | undefined {
+  try {
+    const entries = parseSpecEntries(wasm);
+    if (!entries.length) return undefined;
+    const { fns, errors } = modelFromEntries(entries);
+    const addressParams = new Map<string, string[]>();
+    for (const f of fns) {
+      const addrs = f.params.filter((p) => p.type === "address").map((p) => p.name);
+      if (addrs.length) addressParams.set(f.name, addrs);
+    }
+    return {
+      addressParams,
+      symbols: [...fns.map((f) => f.name), ...errors.map((e) => e.name), ...nomesDeUdt(entries)].filter(Boolean),
+      errCases: errors.flatMap((e) => e.cases.map((c) => c.name)).filter(Boolean),
+    };
+  } catch {
+    // spec ausente, truncado ou de uma versão de XDR que este SDK não decodifica:
+    // os dois detectores que dependem dela não disparam, e nada mais muda.
+    return undefined;
+  }
+}
+
+/**
  * A guarda de "já inicializado" idiomática é um `has_contract_data` na chave de admin/config.
  * Alcançabilidade dela é fato de bytecode (nível A); que ela cubra ESTE caminho é inferência.
  * O nome sai do catálogo para estourar no load se o upstream renomear — um literal errado
@@ -363,6 +526,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
   // CAP-0058: com __constructor o contrato é inicializado atomicamente no deploy.
   // Sem ele, a inicialização é uma transação separada — e aí sim é front-runnable.
   const temConstrutor = an.entrypoints.some((e) => e.name === "__constructor");
+  const spec = wasm ? lerSpec(wasm) : undefined;
   const suppressed: { entrypoint: string; motivo: string }[] = [];
   const push = (f: Finding) => out.push(f);
 
@@ -408,19 +572,33 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
       // até a escrita é curto (≤2 saltos); com guarda, ou com caminho longo, é Medium.
       const guardaInit = ep.reaches.has(HAS_DATA_FN);
       const sevInit: Finding["severity"] = !guardaInit && hops <= 2 ? "High" : "Medium";
-      if (delega && !isInit) {
+      // D10 — escrita de terceiro. O entrypoint é invocável por qualquer endereço, recebe um
+      // `Address` no spec e alcança escrita: é a forma "chamador arbitrário escreve no registro
+      // de outro". Quando vale, ele SUBSTITUI o achado de Elevation em vez de somar — é o mesmo
+      // fato, e a letra certa é Tamper (docs/PRECISION-TOP25.md, recall #2). As supressões
+      // (reservada / read-shaped / crank) já rodaram acima e continuam valendo.
+      const addrParams = spec?.addressParams.get(ep.name) ?? [];
+      const isTampering = !isInit && addrParams.length > 0;
+      if (delega && !isInit && !isTampering) {
         // `<downgraded:…>` é marcador de dado, não texto: idêntico nos dois idiomas.
         suppressed.push({ entrypoint: `<downgraded:${ep.name}>`, motivo: M.supRebaixado });
       }
       push({
-        stride: "Elevation",
-        class: isInit ? "initialization-front-running" : "unauthenticated-state-mutation",
+        stride: isTampering ? "Tamper" : "Elevation",
+        class: isInit
+          ? "initialization-front-running"
+          : isTampering
+            ? "third-party-state-tampering"
+            : "unauthenticated-state-mutation",
         entrypoint: ep.name,
-        title: isInit ? M.tituloInit(ep.name) : M.tituloEscrita(ep.name),
+        family: isInit ? "init" : "auth",
+        title: isInit ? M.tituloInit(ep.name) : isTampering ? M.tituloTampering(ep.name) : M.tituloEscrita(ep.name),
         evidence: [
           base(),
           { tier: "A", claim: M.semAuth(sound) },
           { tier: "A", claim: M.caminhoEscrita(hops) },
+          ...(isTampering ? [{ tier: "A" as const, claim: M.evTamperParams(ep.name, addrParams.join(", ")) }] : []),
+          ...(isTampering ? [{ tier: "C" as const, claim: M.infTamperTaint }] : []),
           ...(isInit
             ? [
                 { tier: "A" as const, claim: M.evInitGuardFato(guardaInit) },
@@ -438,9 +616,9 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         // Init nunca é Critical: o risco depende de o deploy e a inicialização não serem
         // atômicos, o que este binário não mostra. E High exige as DUAS condições —
         // sem guarda visível e caminho direto (≤2 saltos). Ver `sevInit`.
-        severity: isInit ? sevInit : viaHelper ? "Medium" : delega ? "High" : "Critical",
+        severity: isInit ? sevInit : isTampering ? "Medium" : viaHelper ? "Medium" : delega ? "High" : "Critical",
         sound,
-        ...(delega && !isInit ? { notes: [M.notaDelega] } : {}),
+        ...(delega && !isInit && !isTampering ? { notes: [M.notaDelega] } : {}),
       });
     }
 
@@ -450,6 +628,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: "Elevation",
         class: "unguarded-upgrade",
         entrypoint: ep.name,
+        family: "upgrade",
         title: M.tituloUpgrade(ep.name),
         evidence: [
           base(),
@@ -469,6 +648,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: "Tamper",
         class: "write-before-auth",
         entrypoint: ep.name,
+        family: "order",
         title: M.tituloWba(ep.name),
         evidence: [
           base(),
@@ -492,17 +672,38 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
   const mudos = an.entrypoints.filter((e) => mutadorContavel(e) && !emitsEvent(e));
   const mutadores = an.entrypoints.filter(mutadorContavel);
   if (mudos.length) {
+    /*
+     * Severidade pela CLASSE da ação silenciosa, não pela fração mudos/mutadores.
+     * A fração media quanta da superfície é silenciosa; o que importa é O QUE é silencioso.
+     * Medido em docs/PRECISION-TOP25.md: `2 de 2` num bot privado saía High enquanto um
+     * `upgrade` sem evento num fundo tokenizado regulado e um `propose_admin` sem evento
+     * num pool de crédito grande saíam Medium. Os 21 achados dessa classe na amostra eram
+     * todos verdadeiros — só a ordem estava invertida.
+     */
+    const decisores = mudos.filter((e) => canUpgradeSelf(e) || ADMIN_SHAPED.test(e.name));
+    const soInit = mudos.every((e) => INIT_LIKE.test(e.name));
+    const sevSilent: Finding["severity"] = decisores.length ? "High" : soInit ? "Low" : "Medium";
+    // Os decisores saem PRIMEIRO na lista A: é o que o revisor precisa ver antes da cauda.
+    const ordenados = [...decisores, ...mudos.filter((e) => !decisores.includes(e))];
     push({
       stride: "Repudiate",
       class: "silent-mutation",
       entrypoint: "<contrato>",
+      family: "silent",
       title: M.tituloSilent(mudos.length, mutadores.length),
       evidence: [
-        { tier: "A", claim: M.evSilent(mudos.map((e) => e.name).join(", ")) },
+        { tier: "A", claim: M.evSilent(ordenados.map((e) => e.name).join(", ")) },
+        ...(decisores.length
+          ? [{ tier: "A" as const, claim: M.evSilentDecisores(decisores.map((e) => e.name).join(", ")) }]
+          : []),
         ...notaExclusao,
+        {
+          tier: "C",
+          claim: M.regraSeveridadeSilent(sevSilent, decisores.map((e) => e.name).join(", "), soInit),
+        },
         { tier: "C", claim: M.infSilent },
       ],
-      severity: mudos.length === mutadores.length ? "High" : "Medium",
+      severity: sevSilent,
       sound: an.soundness === "sound",
     });
   }
@@ -516,14 +717,18 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
       stride: "DoS",
       class: "archival-risk",
       entrypoint: "<contrato>",
+      family: "ttl",
       title: M.tituloTtl,
       evidence: [
         { tier: "A", claim: M.evTtlEscrevem(escrevem.length, escrevem.map((e) => e.name).join(", ")) },
         ...notaExclusao,
         { tier: "A", claim: M.evTtlNenhum },
         { tier: "C", claim: M.infTtl },
+        // O impacto depende da durabilidade, e a durabilidade NÃO é lida aqui — por isso
+        // Medium com a lacuna declarada, e não High por ausência (docs/PRECISION-TOP25.md).
+        { tier: "C", claim: M.infTtlDurabilidade },
       ],
-      severity: "High",
+      severity: "Medium",
       sound: an.soundness === "sound",
     });
   }
@@ -565,6 +770,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: "Tamper",
         class: "host-prng-in-value-path",
         entrypoint: "<contrato>",
+        family: "prng",
         title: M.tituloPrngAgregado(cands.length, prngNomes),
         evidence: [
           { tier: "A", claim: M.evPrngAgregado(prngNomes, cands.map((c) => M.evPrngItem(c.ep.name, c.hops)).join(", ")) },
@@ -584,6 +790,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: "Tamper",
         class: "host-prng-in-value-path",
         entrypoint: ep.name,
+        family: "prng",
         title: M.tituloPrng(ep.name),
         evidence: [
           { tier: "A", claim: M.evPrng(prngNomes, hops, writesStorage(ep)) },
@@ -597,6 +804,48 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
     }
   }
 
+  // D11 — verificação de assinatura implementada dentro do contrato.
+  //
+  // O detector de auth só sabe procurar `require_auth`. Um contrato que verifica assinatura
+  // por conta própria (permit estilo EIP-712, smart account, oráculo com publisher key) tem
+  // TODA a superfície de Spoofing — replay, expiração, rotação de chave — num lugar onde esse
+  // detector nunca olha, e por isso a letra S saía declarada como lacuna num contrato cujo
+  // spec inteiro é um esquema de assinatura (docs/PRECISION-TOP25.md, recall #3).
+  //
+  // O gatilho é barato e declarado: símbolos do spec (nível A, o spec está no binário) mais
+  // alcançabilidade de host function de cripto (nível A). O que NÃO se afirma é que o
+  // verificador está errado — isso é revisão humana, e é exatamente o que a linha C pede.
+  if (spec) {
+    const simbolos = [...new Set(spec.symbols.filter((s) => SIG_SYMBOL.test(s)))].sort();
+    const erros = [...new Set(spec.errCases.filter((c) => SIG_SYMBOL.test(c) || SIG_ERR.test(c)))].sort();
+    const cripto = [
+      ...new Set(an.entrypoints.flatMap((e) => [...SIG_SCHEME_FNS].filter((n) => e.reaches.has(n)))),
+    ].sort();
+    // Contagem por NOME distinto: o mesmo símbolo aparecendo no enum e na lista de casos
+    // não são dois indícios.
+    const hits = new Set([...simbolos, ...erros]).size;
+    // Forte = ≥2 casamentos. Um único `nonce` num token não basta para afirmar esquema próprio.
+    if (hits > 0 && (cripto.length > 0 || hits >= 2)) {
+      push({
+        stride: "Spoof",
+        class: "self-implemented-signature-verification",
+        entrypoint: "<contrato>",
+        family: "sig",
+        title: M.tituloSigVerif,
+        evidence: [
+          ...(simbolos.length ? [{ tier: "A" as const, claim: M.evSigSimbolos(simbolos.join(", ")) }] : []),
+          ...(erros.length ? [{ tier: "A" as const, claim: M.evSigErros(erros.join(", ")) }] : []),
+          cripto.length
+            ? { tier: "A" as const, claim: M.evSigCrypto(cripto.join(", ")) }
+            : { tier: "A" as const, claim: M.evSigSemCrypto(hits) },
+          { tier: "C" as const, claim: M.infSigVerif },
+        ],
+        severity: "Medium",
+        sound: an.soundness === "sound",
+      });
+    }
+  }
+
   // D9 — versão do SDK gravada no WASM com advisory conhecido.
   // O fonte mostra se o padrão afetado existe; o que só o artefato mostra é qual SDK compilou
   // o binário que está no ledger. Isto é EXPOSIÇÃO (fato A), não vulnerabilidade confirmada:
@@ -605,7 +854,9 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
   // Um achado por advisory aplicável; métricas devem contar contratos, não somar achados.
   if (wasm) {
     const sdk = readSdkMeta(wasm);
-    const ev = evaluateVersion(sdk.version);
+    // `sdk` inteiro, não só `sdk.version`: só o objeto distingue "não declarou rssdkver"
+    // (ausente) de "não conseguimos ler o contractmetav0 até o fim" (não-parseável).
+    const ev = evaluateVersion(sdk);
     // `rssdkver` presente mas ilegível é LACUNA, não ausência de exposição. Antes disso o
     // parse frouxo (`Number("main")` → NaN) fazia qualquer string cair dentro de toda faixa
     // e emitia um achado de advisory High sem nenhum fato por trás.
@@ -614,6 +865,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: "Elevation",
         class: "sdk-version-unparseable",
         entrypoint: "<contrato>",
+        family: "sdk",
         title: M.tituloSdkLacuna(ev.raw),
         evidence: [
           { tier: "A", claim: M.evSdkLacuna(ev.raw) },
@@ -630,6 +882,7 @@ export function detectFull(an: ModuleAnalysis, wasm?: Uint8Array): DetectResult 
         stride: /autoriza|authoriz/i.test(a.title) ? "Elevation" : "Tamper",
         class: "vulnerable-sdk",
         entrypoint: "<contrato>",
+        family: "sdk",
         title: M.tituloSdkExposicao(String(sdk.version), a.id, a.severity),
         evidence: [
           { tier: "A", claim: M.evSdkVersao(String(sdk.version), sdk.commit ? sdk.commit.slice(0, 10) : "") },

@@ -24,12 +24,15 @@
 import type { ArtifactContext } from "../artifact.ts";
 import { tierLabels } from "../artifact.ts";
 import type { Finding, Stride, Tier } from "../detect.ts";
-import type { Entrypoint } from "../analyze.ts";
+import type { Durability, Entrypoint } from "../analyze.ts";
 import {
   caminho, minHops, requiresAuth, writesStorage, emitsEvent, extendsTtl, callsOut, canUpgradeSelf, delegatesAuth,
+  writeDurabilities,
 } from "../analyze.ts";
 import { STORAGE_WRITE_FNS, TTL_EXTEND_FNS } from "../hostfns.ts";
+import { declaracaoDeJanela } from "../events.ts";
 import { lang, msgs, plural } from "../i18n.ts";
+import { validateThreatModel } from "../validate.ts";
 
 /* ------------------------------------------------------------------ *
  * Constantes do template oficial — copiadas literalmente, em inglês.
@@ -163,16 +166,32 @@ const M = msgs({
       `the invocable count: the host refuses to invoke ${plural(n, "it", "them")} directly (CAP-0058), ` +
       `so ${plural(n, "it is", "they are")} not evaluated as attack surface.`,
     semReservados: " No `__*` export, so the two counts coincide.",
-    thSuperficie: "| Entrypoint | auth | writes | event | upgrade | cross-call | fanout |",
+    thSuperficie: "| Entrypoint | auth | writes | durability | event | upgrade | cross-call | fanout |",
     notaSuperficie:
       "In every column, \"yes\" means it **reaches** the corresponding host function on some call-graph " +
       "path, not that it always executes it.\n",
+    notaDurabilidadeCol: (lidos: number, sites: number) =>
+      "\n**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` " +
+      "(`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed " +
+      "binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, " +
+      "so a literal at the call site is that argument by construction. The three durabilities are " +
+      "not interchangeable — a `Temporary` entry is deleted permanently when it expires and " +
+      "CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on " +
+      "every invocation. `?` means the entrypoint writes but the storage type reaches the call " +
+      "computed, typically through a generic helper that takes durability as a parameter; `—` " +
+      `means no write is reached. Read literally at ${lidos} of ${sites} storage call sites in ` +
+      "this module. This column is a description of the contract's storage layout, not a finding: " +
+      "each durability is correct for some data and wrong for other data, and which one this " +
+      "contract holds is not derivable from the bytecode.\n",
     hdrStores: "### Inferred data stores\n",
     chavesCertas: (l: string) => `- Keys read from the module's linear memory: ${l}.`,
     chavesProvaveis: (l: string) => `- Likely keys (partial read of the data section): ${l}.`,
     notaDurabilidade:
-      "\nThe durability of each key (`temporary` / `persistent` / `instance`) is a runtime argument and " +
-      "**does not appear in the bytecode** — do not assume it from this list.\n",
+      "\nDurability is **not** attributable to a key from this list. The `StorageType` is readable " +
+      "per call site (see the `durability` column above), but pairing *which key* goes to *which " +
+      "durability* needs dataflow from the key to the call, which this analysis does not do — a " +
+      "single entrypoint routinely writes several keys at different durabilities. Do not assume " +
+      "the durability of any key below.\n",
     hdrObservacao: "### On-chain activity observed (tier B)\n",
     janela: (de: number, ate: number, n: number, h: number) =>
       `Window: ledgers ${de}–${ate} (${n} ledgers, ~${h}h).`,
@@ -212,20 +231,23 @@ const M = msgs({
      * controle de acesso. Na maior parte dos nós ela é o chamador autorizando o próprio endereço.
      */
     notaFronteiraAuth: (admins: string[], usuarios: string[]) =>
-      "**How to read the authorization boundary (tier C, name-shape heuristic).** Reaching " +
-      "`require_auth*` is not by itself access control. " +
-      (usuarios.length
-        ? `On the ${usuarios.length} user-shaped ${plural(usuarios.length, "node", "nodes")} ` +
-          `(${listaE(usuarios)}) it is the caller authorizing ${plural(usuarios.length, "its", "their")} ` +
-          "own address — the expected shape of a user operation, with no privileged key behind it. "
-        : "") +
+      "**How to read the authorization boundary (tier C, name-shape heuristic).** The boundary says only " +
+      "that `require_auth*` is reachable, and that single label covers two different mechanisms. " +
       (admins.length
-        ? `Only the ${admins.length} admin-shaped ${plural(admins.length, "node", "nodes")} ` +
-          `(${listaE(admins)}) sit behind a key holder whose custody the review has to trace. `
-        : "No node inside the boundary has an administrative name shape, so none of them points at a " +
-          "privileged key holder to trace. ") +
-      "The split comes from the name, not from the bytecode: the call graph never shows *whose* " +
-      "`Address` is authorized.\n",
+        ? `**Access control** — ${admins.length} admin-shaped ${plural(admins.length, "node", "nodes")} ` +
+          `(${listaE(admins)}): there the authorized \`Address\` is a privileged role, and the review has ` +
+          "to trace its custody (multisig or a single key). "
+        : "**Access control** — no node inside the boundary has an administrative name shape, so none of " +
+          "them points at a privileged key holder to trace. ") +
+      (usuarios.length
+        ? `**Self-authorization** — ${usuarios.length} user-shaped ${plural(usuarios.length, "node", "nodes")} ` +
+          `(${listaE(usuarios)}): there \`require_auth\` is the caller authorizing ` +
+          `${plural(usuarios.length, "its", "their")} own address, the expected shape of a user operation ` +
+          "(`swap`, `deposit`, `withdraw`), with no privileged key behind it and nothing to trace. "
+        : "") +
+      "Reading the whole boundary as access control overstates it; reading it as self-authorization " +
+      "understates it. The split comes from the name, not from the bytecode: the call graph never shows " +
+      "*whose* `Address` is authorized.\n",
     dfdAusente:
       "**Declared gap: no data-flow diagram was generated for this contract.** The template requires at " +
       "least one visual diagram, so the artifact is incomplete at this point. This is a generation " +
@@ -250,16 +272,16 @@ const M = msgs({
           : `${n} invocable ${plural(n, "entrypoint reaches", "entrypoints reach")} \`require_auth*\``
       }. ` +
       (admins.length
-        ? `**Admin-shaped (${admins.length}, key-holder trace required):** ${listaE(admins)} — those are ` +
-          "the calls whose `Address` the review has to trace back to a key holder: custody, multisig or " +
-          "a single key. "
-        : "**No admin-shaped entrypoint reaches `require_auth*`**, so this contract has no such call to " +
-          "trace back to a key holder. ") +
+        ? `**Access control (${admins.length} admin-shaped, key-holder trace required):** ${listaE(admins)} ` +
+          "— those are the calls whose `Address` is a privileged role and has to be traced back to a key " +
+          "holder: custody, multisig or a single key. "
+        : "**Access control: no admin-shaped entrypoint reaches `require_auth*`**, so this contract has no " +
+          "such call to trace back to a key holder. ") +
       (usuarios.length
-        ? `**User-shaped (${usuarios.length}, no key-holder trace):** ${listaE(usuarios)} — there ` +
-          `\`require_auth\` is the caller authorizing ${plural(usuarios.length, "its", "their")} own ` +
-          "address, which is the expected shape of a user operation, not access control; there is no " +
-          "privileged key behind it to trace. "
+        ? `**Self-authorization (${usuarios.length} user-shaped, no key-holder trace):** ${listaE(usuarios)} ` +
+          `— there \`require_auth\` is the caller authorizing ${plural(usuarios.length, "its", "their")} own ` +
+          "address (`swap`, `deposit`, `withdraw` are the usual shape), which is a user operation, not " +
+          "access control; there is no privileged key behind it to trace. "
         : "") +
       "**This split is a name-shape heuristic (tier C), not a bytecode fact** — the bytecode shows that " +
       "`require_auth*` is reached, never *whose* address is authorized. Check it against the signatures " +
@@ -407,6 +429,35 @@ const M = msgs({
       `These ${n} findings have byte-for-byte identical evidence and differ only in the entrypoint, so ` +
       "they appear in a single block. Each ID remains individual, with its own remediation in the next " +
       "section.\n",
+    /* --- bloco agregado por família --- */
+    notaAgregado: (n: number, fam: string, cls: string) =>
+      `These ${n} findings are the same shape: family \`${fam}\`, class \`${cls}\`, one per entrypoint. ` +
+      "Repeating the block " + `${n} times would bury the rest of the document without adding a fact, so ` +
+      "what differs per entrypoint is in the table below, and the evidence and the remediation they share " +
+      "are stated once. Each ID stays individual: its row is its anchor, and the threat table and the " +
+      "remediations keep every id.\n",
+    colId: "ID",
+    colEntrypoint: "Entrypoint",
+    colNiveis: "Evidence tiers",
+    colSeveridadeTab: "Severity",
+    colHops: "Hops to the write",
+    colGuard: "`has_contract_data`",
+    colProbe: "On-chain probe",
+    guardSim: "reachable",
+    guardNao: "not reachable",
+    semDado: "—",
+    linhaAncoras: (ids: string) =>
+      `**Per-ID anchors:** ${ids}. Each row above is the anchor for its id — the monitor ids ` +
+      "`<ThreatID>.M.<n>` in the monitoring plan resolve to them.\n",
+    evidenciaCondensada: (n: number) =>
+      `**Evidence** — condensed: the reachable set, the hop count and the applied severity rule are ` +
+      `per entrypoint and are in the table above. What follows is the evidence the ${n} findings share, ` +
+      "stated once.\n",
+    remCompartilhada: (a: string, b: string) =>
+      `**Shared remediation.** The same actions apply to every entrypoint listed; they stay numbered per ` +
+      `id, from ${a} to ${b}, in *What are we going to do about it*.\n`,
+    valorSeveridadeVarias: (l: string) =>
+      `${l} — per entrypoint, in the table above; **tier C**, a risk judgement, not a bytecode fact`,
     thIdEntrypoint: "| ID | Entrypoint |",
     lblClasse: "Class",
     lblAlvo: "Target",
@@ -420,6 +471,26 @@ const M = msgs({
     aindaNaoAchado: (escopo: string, id: string) =>
       "> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be " +
       `confirmed in the source ${escopo} before entering a fix plan. See ${id}.R.1.\n`,
+    /* --- bloco da sondagem de init (probe) — ver notaProbe() --- */
+    probeCabecalho: "> **Init probe (tier B).**\n>\n",
+    probeLinha: (ep: string, ledger: string, kind: string, detail: string) =>
+      `> - \`${ep}\` — Probe (unsigned simulateTransaction${ledger}): **${kind}** — ${detail}.\n`,
+    probeLedger: (l: number) => `, ledger ${l}`,
+    probeGuarded:
+      ">\n> The front-running window is closed on this instance; residual risk is limited to a future re-deploy " +
+      "of the same code with the same non-atomic initialization.\n",
+    probeOpen:
+      ">\n> ⚠ **The initializer executed successfully in simulation with placeholder arguments: any address can " +
+      "initialize this instance NOW — treat as High until confirmed.** The simulation was unsigned and never " +
+      "submitted; it is evidence that the call is accepted at the current ledger, not that it was executed.\n",
+    probeInconclusivo:
+      ">\n> The probe did not settle the question: placeholder arguments can fail validation before reaching the " +
+      "guard, so this is neither confirmation nor refutation. The tier C wording above stands as written.\n",
+    achadoFechadoPorObservacao: (escopo: string, id: string) =>
+      "> **This finding is closed by observation.** The unsigned probe above reached an already-initialized " +
+      `guard ${escopo}: the front-running window described in tier C has already closed on this instance. ` +
+      `It stays in the document as the re-deploy risk it still is — see ${id}.R.1 — not as an open issue.\n`,
+
     notaJaInicializado: (n: number, h: number) =>
       `> **Tier B/C note.** Observed traffic (${n} ${plural(n, "event", "events")} over ~${h} h) indicates ` +
       "this instance is already initialized, so the tier C wording above describes a window that has " +
@@ -739,6 +810,24 @@ const M = msgs({
       "oracle), governance and custody of the privileged keys, security of the frontend and of the " +
       "infrastructure that builds the transactions, and whether the address authorized in each " +
       "`require_auth` is the right address. None of those questions can be answered from the binary.",
+    /* --- veredito de submissão (três estados) --- */
+    hdrVeredito: "### Submission verdict\n",
+    vereditoOk:
+      "**SUBMITTABLE.** Every check above passes and nothing is left for the team to fill in.\n",
+    vereditoInput: (n: number) =>
+      `**NEEDS INPUT.** The tool's own checks pass; ${n} ${plural(n, "item", "items")} below ` +
+      `${plural(n, "is", "are")} input that no bytecode or on-chain analysis produces. Filling ` +
+      `${plural(n, "it", "them")} is what makes this document submittable — nothing in the analysis has to change.\n`,
+    vereditoNao: (nb: number, ni: number) =>
+      `**NOT SUBMITTABLE.** ${nb} ${plural(nb, "blocker is", "blockers are")} the tool's own to close` +
+      (ni ? `, and ${ni} ${plural(ni, "item", "items")} on top of that ${plural(ni, "is", "are")} for the team` : "") +
+      ". Do not submit in this state: what follows is an assertion the analysis does not sustain, " +
+      "and it is the first thing a reviewer pulls on.\n",
+    hdrBlockersDoc: "**Blockers — the tool's own, not the team's:**\n",
+    hdrInputDoc: "### Input the team must provide before submitting\n",
+    notaInputDoc:
+      "None of these comes out of a binary or out of the chain. Each line names the worksheet it is " +
+      "filled from; the analysis above does not change when they are answered.\n",
     divergencia: (l: string, n: number) =>
       `> **Inconsistent input:** \`ctx.gaps\` lists ${l} as ${plural(n, "a letter", "letters")} with no ` +
       `finding, but findings were derived under ${plural(n, "it", "them")}. The document followed the ` +
@@ -848,16 +937,32 @@ const M = msgs({
       `diretamente (CAP-0058) e por isso ${n === 1 ? "ele não é avaliado" : "eles não são avaliados"} ` +
       "como superfície de ataque.",
     semReservados: " Nenhum export `__*`, então as duas contagens coincidem.",
-    thSuperficie: "| Entrypoint | auth | escreve | evento | upgrade | cross-call | fanout |",
+    thSuperficie: "| Entrypoint | auth | escreve | durabilidade | evento | upgrade | cross-call | fanout |",
     notaSuperficie:
       "Em todas as colunas, \"sim\" quer dizer **alcança** a host function correspondente em algum " +
       "caminho do call graph, não que a execute sempre.\n",
+    notaDurabilidadeCol: (lidos: number, sites: number) =>
+      "\n**durabilidade** é o `StorageType` das escritas que este entrypoint alcança — `temp` " +
+      "(`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). Sai do binário deployado: em " +
+      "`put_contract_data`/`del_contract_data` o tipo de storage é o último argumento, então um " +
+      "literal no call site é esse argumento por construção. As três durabilidades não são " +
+      "intercambiáveis — uma entrada `Temporary` é apagada em definitivo ao expirar e o CAP-0066 " +
+      "não a restaura, e `Instance` é uma única ledger entry de 64 KiB carregada por inteiro a " +
+      "cada invocação. `?` quer dizer que o entrypoint escreve mas o tipo de storage chega " +
+      "computado à chamada, tipicamente por um helper genérico que recebe a durabilidade por " +
+      `parâmetro; \`—\` quer dizer que nenhuma escrita é alcançada. Lido literal em ${lidos} de ${sites} ` +
+      "call sites de storage neste módulo. Esta coluna descreve o layout de storage do contrato, " +
+      "não é achado: cada durabilidade é correta para um tipo de dado e errada para outro, e qual " +
+      "deles este contrato guarda não é derivável do bytecode.\n",
     hdrStores: "### Data stores inferidos\n",
     chavesCertas: (l: string) => `- Chaves lidas da memória linear do módulo: ${l}.`,
     chavesProvaveis: (l: string) => `- Chaves prováveis (leitura parcial da seção de dados): ${l}.`,
     notaDurabilidade:
-      "\nA durabilidade de cada chave (`temporary` / `persistent` / `instance`) é argumento de " +
-      "runtime e **não aparece no bytecode** — não a assuma a partir desta lista.\n",
+      "\nA durabilidade **não** é atribuível a uma chave desta lista. O `StorageType` é legível por " +
+      "call site (ver a coluna `durabilidade` acima), mas parear *qual chave* vai para *qual " +
+      "durabilidade* exige dataflow da chave até a chamada, o que esta análise não faz — um mesmo " +
+      "entrypoint costuma gravar várias chaves em durabilidades diferentes. Não assuma a " +
+      "durabilidade de nenhuma chave abaixo.\n",
     hdrObservacao: "### Atividade observada on-chain (nível B)\n",
     janela: (de: number, ate: number, n: number, h: number) =>
       `Janela: ledgers ${de}–${ate} (${n} ledgers, ~${h}h).`,
@@ -893,19 +998,21 @@ const M = msgs({
       "cruza para fora do contrato (`call`/`try_call`) ou onde a autorização é exigida.\n",
     thFronteiras: "| Fronteira de confiança | Nós contidos |",
     notaFronteiraAuth: (admins: string[], usuarios: string[]) =>
-      "**Como ler a fronteira de autorização (nível C, heurística por forma do nome).** Alcançar " +
-      "`require_auth*` não é, por si, controle de acesso. " +
-      (usuarios.length
-        ? `Nos ${usuarios.length} nós com forma de usuário (${listaE(usuarios)}) ela é o chamador ` +
-          "autorizando o próprio endereço — forma esperada de operação de usuário, sem chave " +
-          "privilegiada atrás. "
-        : "") +
+      "**Como ler a fronteira de autorização (nível C, heurística por forma do nome).** A fronteira diz " +
+      "apenas que `require_auth*` é alcançável, e esse rótulo único cobre dois mecanismos diferentes. " +
       (admins.length
-        ? `Só os ${admins.length} nós com forma administrativa (${listaE(admins)}) estão atrás de um ` +
-          "detentor de chave cuja custódia a revisão precisa rastrear. "
-        : "Nenhum nó dentro da fronteira tem forma administrativa de nome, então nenhum deles aponta " +
-          "para um detentor de chave privilegiada a rastrear. ") +
-      "A separação vem do nome, não do bytecode: o call graph nunca mostra *de quem* é o `Address` " +
+        ? `**Controle de acesso** — ${admins.length} nós com forma administrativa (${listaE(admins)}): ali ` +
+          "o `Address` autorizado é um papel privilegiado, e a revisão precisa rastrear a custódia dele " +
+          "(multisig ou chave única). "
+        : "**Controle de acesso** — nenhum nó dentro da fronteira tem forma administrativa de nome, então " +
+          "nenhum deles aponta para um detentor de chave privilegiada a rastrear. ") +
+      (usuarios.length
+        ? `**Autoautorização** — ${usuarios.length} nós com forma de usuário (${listaE(usuarios)}): ali ` +
+          "`require_auth` é o chamador autorizando o próprio endereço, forma esperada de operação de " +
+          "usuário (`swap`, `deposit`, `withdraw`), sem chave privilegiada atrás e sem nada a rastrear. "
+        : "") +
+      "Ler a fronteira inteira como controle de acesso exagera; lê-la como autoautorização subestima. A " +
+      "separação vem do nome, não do bytecode: o call graph nunca mostra *de quem* é o `Address` " +
       "autorizado.\n",
     dfdAusente:
       "**Lacuna: nenhum data-flow diagram foi gerado para este contrato.** O template exige ao " +
@@ -926,15 +1033,16 @@ const M = msgs({
             "`require_auth*`"
       }. ` +
       (admins.length
-        ? `**Com forma administrativa (${admins.length}, exigem rastreio de chave):** ${listaE(admins)} — ` +
-          "são as chamadas cujo `Address` a revisão precisa rastrear até um detentor de chave: custódia, " +
-          "multisig ou chave única. "
-        : "**Nenhum entrypoint com forma administrativa alcança `require_auth*`**, então não há nessa " +
-          "forma chamada a rastrear até detentor de chave. ") +
+        ? `**Controle de acesso (${admins.length} com forma administrativa, exigem rastreio de chave):** ` +
+          `${listaE(admins)} — são as chamadas cujo \`Address\` é papel privilegiado e precisa ser rastreado ` +
+          "até um detentor de chave: custódia, multisig ou chave única. "
+        : "**Controle de acesso: nenhum entrypoint com forma administrativa alcança `require_auth*`**, " +
+          "então não há nessa forma chamada a rastrear até detentor de chave. ") +
       (usuarios.length
-        ? `**Com forma de usuário (${usuarios.length}, sem rastreio de chave):** ${listaE(usuarios)} — ali ` +
-          "o `require_auth` é o chamador autorizando o PRÓPRIO endereço, que é a forma esperada de uma " +
-          "operação de usuário, não controle de acesso; não há chave privilegiada atrás dela para rastrear. "
+        ? `**Autoautorização (${usuarios.length} com forma de usuário, sem rastreio de chave):** ` +
+          `${listaE(usuarios)} — ali o \`require_auth\` é o chamador autorizando o PRÓPRIO endereço ` +
+          "(`swap`, `deposit`, `withdraw` são a forma usual), que é operação de usuário, não controle de " +
+          "acesso; não há chave privilegiada atrás dela para rastrear. "
         : "") +
       "**Essa separação é heurística por forma do nome (nível C), não fato de bytecode** — o bytecode " +
       "mostra que `require_auth*` é alcançado, nunca *de quem* é o endereço autorizado. Conferir contra " +
@@ -1084,6 +1192,35 @@ const M = msgs({
       `Estes ${n} achados têm evidência byte a byte idêntica e diferem apenas no ` +
       "entrypoint, então aparecem num bloco só. Cada ID continua individual, com remediação " +
       "própria na seção seguinte.\n",
+    /* --- bloco agregado por família --- */
+    notaAgregado: (n: number, fam: string, cls: string) =>
+      `Estes ${n} achados têm a mesma forma: família \`${fam}\`, classe \`${cls}\`, um por entrypoint. ` +
+      `Repetir o bloco ${n} vezes enterraria o resto do documento sem acrescentar um fato, então o que ` +
+      "difere por entrypoint está na tabela abaixo, e a evidência e a remediação que eles compartilham " +
+      "aparecem uma vez. Cada ID continua individual: a linha dele é a âncora, e a tabela de ameaças e as " +
+      "remediações mantêm todos os ids.\n",
+    colId: "ID",
+    colEntrypoint: "Entrypoint",
+    colNiveis: "Níveis de evidência",
+    colSeveridadeTab: "Severidade",
+    colHops: "Saltos até a escrita",
+    colGuard: "`has_contract_data`",
+    colProbe: "Sondagem on-chain",
+    guardSim: "alcançável",
+    guardNao: "não alcançável",
+    semDado: "—",
+    linhaAncoras: (ids: string) =>
+      `**Âncoras por ID:** ${ids}. Cada linha acima é a âncora do seu id — os ids de monitor ` +
+      "`<ThreatID>.M.<n>` do monitoring plan resolvem nelas.\n",
+    evidenciaCondensada: (n: number) =>
+      "**Evidência** — condensada: o conjunto alcançável, a contagem de saltos e a regra de severidade " +
+      `aplicada são por entrypoint e estão na tabela acima. O que segue é a evidência que os ${n} achados ` +
+      "compartilham, dita uma vez.\n",
+    remCompartilhada: (a: string, b: string) =>
+      "**Remediação compartilhada.** As mesmas ações valem para todos os entrypoints listados; elas " +
+      `continuam numeradas por id, de ${a} a ${b}, em *What are we going to do about it*.\n`,
+    valorSeveridadeVarias: (l: string) =>
+      `${l} — por entrypoint, na tabela acima; **nível C**, é juízo de risco, não fato de bytecode`,
     thIdEntrypoint: "| ID | Entrypoint |",
     lblClasse: "Classe",
     lblAlvo: "Alvo",
@@ -1097,6 +1234,25 @@ const M = msgs({
     aindaNaoAchado: (escopo: string, id: string) =>
       "> **Este achado ainda não é um achado.** A evidência positiva é super-aproximada e " +
       `precisa ser confirmada no fonte ${escopo} antes de entrar num plano de correção. Ver ${id}.R.1.\n`,
+    probeCabecalho: "> **Sondagem de init (nível B).**\n>\n",
+    probeLinha: (ep: string, ledger: string, kind: string, detail: string) =>
+      `> - \`${ep}\` — Sondagem (simulateTransaction não assinada${ledger}): **${kind}** — ${detail}.\n`,
+    probeLedger: (l: number) => `, ledger ${l}`,
+    probeGuarded:
+      ">\n> A janela de front-running está fechada nesta instância; o risco residual se limita a um futuro " +
+      "re-deploy do mesmo código com a mesma inicialização não atômica.\n",
+    probeOpen:
+      ">\n> ⚠ **O inicializador executou com sucesso na simulação com argumentos placeholder: qualquer endereço " +
+      "pode inicializar esta instância AGORA — trate como High até confirmação.** A simulação foi não assinada e " +
+      "nunca submetida; ela é evidência de que a chamada é aceita no ledger corrente, não de que foi executada.\n",
+    probeInconclusivo:
+      ">\n> A sondagem não resolveu a pergunta: argumentos placeholder podem falhar na validação antes de chegar " +
+      "à guarda, então isto não é confirmação nem refutação. O texto de nível C acima continua valendo.\n",
+    achadoFechadoPorObservacao: (escopo: string, id: string) =>
+      "> **Este achado está fechado por observação.** A sondagem não assinada acima chegou a uma guarda de \"já " +
+      `inicializado\" ${escopo}: a janela de front-running descrita no nível C já fechou nesta instância. ` +
+      `Ele fica no documento como o risco de re-deploy que ainda é — ver ${id}.R.1 — não como issue aberta.\n`,
+
     notaJaInicializado: (n: number, h: number) =>
       `> **Nota de nível B/C.** O tráfego observado (${n} ${n === 1 ? "evento" : "eventos"} em ~${h} h) ` +
       "indica que esta instância já está inicializada, então o texto de nível C acima descreve uma " +
@@ -1420,6 +1576,24 @@ const M = msgs({
       "oráculo), governança e custódia das chaves privilegiadas, segurança do frontend e da " +
       "infraestrutura que monta as transações, e se o endereço autorizado em cada `require_auth` é o " +
       "endereço certo. Nenhuma dessas perguntas é respondível a partir do binário.",
+    /* --- veredito de submissão (três estados) --- */
+    hdrVeredito: "### Submission verdict\n",
+    vereditoOk:
+      "**SUBMETÍVEL.** Todas as checagens acima passam e não sobra nada para a equipe preencher.\n",
+    vereditoInput: (n: number) =>
+      `**FALTA PREENCHER.** As checagens da própria ferramenta passam; ${n} ${plural(n, "item", "itens")} ` +
+      `abaixo ${plural(n, "é", "são")} preenchimento que nenhuma análise de bytecode ou on-chain produz. ` +
+      `Preenchê-${plural(n, "lo", "los")} é o que torna este documento submetível — nada da análise precisa mudar.\n`,
+    vereditoNao: (nb: number, ni: number) =>
+      `**NÃO SUBMETÍVEL.** ${nb} ${plural(nb, "bloqueio é", "bloqueios são")} da própria ferramenta` +
+      (ni ? `, e ${ni} ${plural(ni, "item", "itens")} além ${plural(ni, "é", "são")} da equipe` : "") +
+      ". Não submeter neste estado: o que segue é afirmação que a análise não sustenta, e é a primeira " +
+      "coisa que um revisor puxa.\n",
+    hdrBlockersDoc: "**Bloqueios — da ferramenta, não da equipe:**\n",
+    hdrInputDoc: "### Input the team must provide before submitting\n",
+    notaInputDoc:
+      "Nada disto sai de um binário nem da chain. Cada linha nomeia a planilha de onde se preenche; a " +
+      "análise acima não muda quando elas forem respondidas.\n",
     divergencia: (l: string, _n: number) =>
       `> **Inconsistência na entrada:** \`ctx.gaps\` lista ${l} como letra sem ` +
       "achado, mas há achado derivado nessa(s) letra(s). O documento seguiu os achados, e esta linha " +
@@ -1479,6 +1653,24 @@ const listaE = (nomes: string[], max = 6): string => {
 };
 
 const sim = (b: boolean) => (b ? M.sim : M.nao);
+
+/** Rótulos curtos — a tabela já tem oito colunas e não comporta os nomes por extenso. */
+const DUR_ABREV: Record<Durability, string> = {
+  temporary: "temp",
+  persistent: "pers",
+  instance: "inst",
+};
+
+/**
+ * Célula da coluna `durability`. Três estados, e os três precisam ser distinguíveis:
+ * durabilidades lidas · `?` (escreve, mas o `StorageType` chega computado) · `—` (não
+ * escreve). Colapsar `?` em `—` diria "não escreve" sobre um entrypoint que escreve.
+ */
+const durCel = (e: Entrypoint): string => {
+  const ds = writeDurabilities(e);
+  if (ds.length) return ds.map((d) => `\`${DUR_ABREV[d]}\``).join(", ");
+  return writesStorage(e) ? "`?`" : "—";
+};
 
 /**
  * Um contrato que exporta `__check_auth` é uma conta customizada: ali a autorização é
@@ -1562,21 +1754,100 @@ function linhaSolidez(ctx: ArtifactContext, f: Finding, varios = false): string 
 }
 
 /**
- * Agrupa achados cuja classe e evidência são byte a byte idênticas, diferindo só no
- * entrypoint. Nove blocos com o mesmo texto não acrescentam informação — enterram o resto
- * do documento, que é exatamente como um relatório vira ruído. O agrupamento é só de
- * apresentação no detalhamento: cada ID continua listado, individual e rastreável, na
- * tabela de ameaças e na de remediações.
+ * A partir de quantas repetições a família vira um bloco só. Três é onde o custo de ler
+ * blocos iguais passa a ser maior que o de ler uma tabela: com dois, a comparação lado a
+ * lado ainda é o que o revisor quer.
+ */
+const MIN_AGREGACAO = 3;
+
+/** Evidência idêntica (nível + texto) em TODOS os achados do grupo, na ordem do primeiro. */
+function evidenciaComum(grupo: readonly Finding[]): Finding["evidence"] {
+  const chave = (e: Finding["evidence"][number]) => `${e.tier}\u0000${e.claim}`;
+  const outros = grupo.slice(1).map((g) => new Set(g.evidence.map(chave)));
+  return grupo[0].evidence.filter((e) => outros.every((s) => s.has(chave(e))));
+}
+
+/**
+ * Chave de agregação por FAMÍLIA: mesma família, mesma classe, mesma solidez e a mesma forma
+ * de evidência (a sequência de níveis). A severidade fica FORA da chave de propósito — ela é
+ * um fato por entrypoint e vira coluna da tabela; exigi-la igual era o que fazia cinco
+ * `initialization-front-running` da mesma forma saírem como cinco blocos iguais.
+ *
+ * Nunca agrega entre classes: duas classes diferentes na mesma família são duas ameaças
+ * diferentes, e uni-las apagaria justamente o que o revisor precisa distinguir.
+ */
+function chaveFamilia(f: Finding): string | undefined {
+  if (!f.family || f.entrypoint === "<contrato>") return undefined;
+  return `fam\u0000${f.family}\u0000${f.class}\u0000${f.sound}\u0000${f.evidence.map((e) => e.tier).join("")}`;
+}
+
+/**
+ * Agrupa achados para o detalhamento. Duas réguas, nesta ordem:
+ *
+ *  1. FAMÍLIA — ≥3 achados da mesma família e classe, com a mesma forma de evidência, viram um
+ *     bloco só, com uma tabela por entrypoint. Cinco blocos com a mesma prosa não acrescentam
+ *     informação: enterram o resto do documento, que é como um relatório vira ruído.
+ *  2. EVIDÊNCIA IDÊNTICA — o agrupamento byte a byte, para o resto.
+ *
+ * O agrupamento é só de APRESENTAÇÃO: cada ID continua individual e rastreável na tabela de
+ * ameaças, na de remediações e na linha da tabela do próprio bloco — é dela que os ids de
+ * monitor `<ThreatID>.M.<n>` dependem para resolver.
  */
 function agrupar(fs: Finding[]): Finding[][] {
+  const contaFamilia = new Map<string, number>();
+  for (const f of fs) {
+    const k = chaveFamilia(f);
+    if (k) contaFamilia.set(k, (contaFamilia.get(k) ?? 0) + 1);
+  }
   const ordem: string[] = [];
   const m = new Map<string, Finding[]>();
   for (const f of fs) {
-    const k = `${f.class} ${f.severity} ${f.sound} ${f.evidence.map((e) => `${e.tier}:${e.claim}`).join("")}`;
+    const fam = chaveFamilia(f);
+    const k =
+      fam && (contaFamilia.get(fam) ?? 0) >= MIN_AGREGACAO
+        ? fam
+        : `exato\u0000${f.class}\u0000${f.severity}\u0000${f.sound}\u0000${f.evidence.map((e) => `${e.tier}:${e.claim}`).join("\u0001")}`;
     if (!m.has(k)) { m.set(k, []); ordem.push(k); }
     m.get(k)!.push(f);
   }
   return ordem.map((k) => m.get(k)!);
+}
+
+/**
+ * A tabela do bloco agregado: uma linha por achado, com os fatos que diferem entre eles.
+ *
+ * Cada linha é TAMBÉM a âncora do id — por isso ela carrega as marcas de nível. Sem elas o
+ * validador leria um id presente no documento sem nenhuma afirmação marcada e acusaria, com
+ * razão, que o leitor não distingue fato de bytecode de inferência naquele achado.
+ */
+function tabelaAgregada(ctx: ArtifactContext, grupo: readonly Finding[]): string[] {
+  const epDe = (f: Finding) => ctx.analysis.entrypoints.find((e) => e.name === f.entrypoint);
+  const hops = new Map(grupo.map((f) => [fid(f), (() => { const e = epDe(f); return e ? minHops(e, STORAGE_WRITE_FNS) : undefined; })()]));
+  const probes = ctx.spec.probes;
+  const comHops = [...hops.values()].some((h) => h !== undefined);
+  const comGuard = grupo.some((f) => f.family === "init");
+  const comProbe = Boolean(probes) && grupo.some((f) => probes![fid(f)]);
+
+  const cols = [M.colId, M.colEntrypoint, M.colNiveis, M.colSeveridadeTab];
+  if (comHops) cols.push(M.colHops);
+  if (comGuard) cols.push(M.colGuard);
+  if (comProbe) cols.push(M.colProbe);
+
+  const linhas = [`| ${cols.join(" | ")} |`, `|${cols.map(() => "---").join("|")}|`];
+  for (const f of grupo) {
+    const ep = epDe(f);
+    const cells = [
+      `**${fid(f)}**`,
+      `\`${cel(f.entrypoint)}\``,
+      niveisDe(f).map((t) => `[${t}]`).join("+"),
+      f.severity,
+    ];
+    if (comHops) cells.push(hops.get(fid(f))?.toString() ?? M.semDado);
+    if (comGuard) cells.push(ep ? (ep.reaches.has("has_contract_data") ? M.guardSim : M.guardNao) : M.semDado);
+    if (comProbe) cells.push(probes?.[fid(f)] ? cel(String(probes[fid(f)]!.kind)) : M.semDado);
+    linhas.push(`| ${cells.join(" | ")} |`);
+  }
+  return linhas;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1689,15 +1960,20 @@ function secaoContexto(ctx: ArtifactContext, ft: Fatos): string {
     );
     p.push("");
     p.push(M.thSuperficie);
-    p.push("|---|---|---|---|---|---|---|");
+    p.push("|---|---|---|---|---|---|---|---|");
     for (const e of ft.invocaveis) {
       p.push(
-        `| \`${cel(e.name)}\` | ${sim(requiresAuth(e))} | ${sim(writesStorage(e))} | ${sim(emitsEvent(e))} | ` +
+        `| \`${cel(e.name)}\` | ${sim(requiresAuth(e))} | ${sim(writesStorage(e))} | ${durCel(e)} | ${sim(emitsEvent(e))} | ` +
           `${sim(canUpgradeSelf(e))} | ${sim(callsOut(e))} | ${e.fanout} |`,
       );
     }
     p.push("");
     p.push(M.notaSuperficie);
+    // Cobertura do MÓDULO, não a soma por entrypoint: somar contaria um helper de storage
+    // compartilhado uma vez por export que o alcança. Sem este denominador, um `—` na linha
+    // não se distingue de "não consegui ler".
+    const dc = ctx.analysis.durabilityCoverage;
+    if (dc?.sites) p.push(M.notaDurabilidadeCol(dc.literal, dc.sites));
   }
 
   if (ctx.storageKeys?.length) {
@@ -1717,6 +1993,12 @@ function secaoContexto(ctx: ArtifactContext, ft: Fatos): string {
         (o.window.insufficient ? M.janelaInsuficiente : ""),
     );
     p.push("");
+    /* ---- declaração de janela (limitedBy) — bloco único, ver events.ts ---- */
+    if (ctx.spec.windowLimitedBy) {
+      p.push(declaracaoDeJanela(o.window.ledgers, o.window.approxHours, ctx.spec.windowLimitedBy));
+      p.push("");
+    }
+    /* ---- fim da declaração de janela ---- */
     if (o.events.length) {
       p.push(M.thEventos);
       p.push("|---|---|---|---|");
@@ -1913,6 +2195,45 @@ const formaAdmin = (nome: string) => FORMA_ADMIN.test(nome);
  * depende de um guard que o bytecode não mostra; é isso que a nota diz, com a evidência
  * que existe (`has_contract_data` alcançável ou não).
  */
+/* ------------------------------------------------------------------ *
+ * BLOCO DA SONDAGEM DE INIT (probe) — início.
+ * Tudo que este agente acrescenta ao arquivo fora da declaração de janela
+ * está entre este marcador e o de fim, mais a chamada única em secaoAmeacas.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A linha de nível B que fecha (ou abre de vez) um achado de init.
+ *
+ * Medido no top 25 de mainnet: 23 dos 66 achados eram front-running de inicializador que
+ * JÁ disparou (`docs/PRECISION-TOP25.md`). O documento afirmava no presente uma janela
+ * fechada — e um revisor que checa isso em uma chamada de RPC derruba o documento inteiro.
+ * A sondagem é `simulateTransaction` NÃO ASSINADA: nada é submetido, nada é assinado.
+ *
+ * `fechado` só é verdadeiro quando TODO achado sondado do grupo saiu `guarded`: um único
+ * `open` ou `inconclusive` no grupo mantém o callout de "ainda não é um achado", porque
+ * argumentos placeholder podem falhar antes da guarda.
+ */
+function notaProbe(ctx: ArtifactContext, grupo: Finding[]): { texto: string; fechado: boolean } | undefined {
+  const probes = ctx.spec.probes;
+  if (!probes) return undefined;
+  const pares = grupo
+    .map((f) => ({ f, r: probes[fid(f)] }))
+    .filter((x): x is { f: Finding; r: NonNullable<typeof x.r> } => Boolean(x.r));
+  if (!pares.length) return undefined;
+
+  let texto = M.probeCabecalho;
+  for (const { r } of pares) {
+    texto += M.probeLinha(cel(r.entrypoint), r.ledger ? M.probeLedger(r.ledger) : "", r.kind, r.detail);
+  }
+  const algum = (k: string) => pares.some((x) => x.r.kind === k);
+  if (algum("open")) texto += M.probeOpen;
+  else if (pares.every((x) => x.r.kind === "guarded")) texto += M.probeGuarded;
+  else texto += M.probeInconclusivo;
+  return { texto, fechado: !algum("open") && pares.every((x) => x.r.kind === "guarded") };
+}
+
+/* ---- BLOCO DA SONDAGEM DE INIT (probe) — fim ---- */
+
 function notaInicializacao(ctx: ArtifactContext, grupo: Finding[]): string | undefined {
   const o = ctx.observations;
   if (!o || !o.events.length) return undefined;
@@ -1996,12 +2317,23 @@ function secaoAmeacas(ctx: ArtifactContext, ft: Fatos, gapsEfetivos: Set<Stride>
             ? M.tituloGrupo(fid(f), fid(grupo[grupo.length - 1]), f.class, grupo.length)
             : `#### ${fid(f)} — ${f.title}\n`,
         );
+        // Evidência que TODOS do grupo carregam. No grupo exato é a lista inteira; no grupo
+        // agregado por família é o que sobra depois de tirar o que é por entrypoint — e o que
+        // saiu dali não some: vira coluna da tabela acima.
+        const compartilhada = evidenciaComum(grupo);
+        const agregado = muitos && compartilhada.length < f.evidence.length;
         if (muitos) {
-          p.push(M.notaGrupo(grupo.length));
-          p.push(M.thIdEntrypoint);
-          p.push("|---|---|");
-          for (const g of grupo) p.push(`| ${fid(g)} | \`${cel(g.entrypoint)}\` |`);
-          p.push("");
+          p.push(agregado ? M.notaAgregado(grupo.length, f.family ?? "—", f.class) : M.notaGrupo(grupo.length));
+          if (agregado) {
+            for (const l of tabelaAgregada(ctx, grupo)) p.push(l);
+            p.push("");
+            p.push(M.linhaAncoras(grupo.map((g) => `\`${fid(g)}\``).join(" · ")));
+          } else {
+            p.push(M.thIdEntrypoint);
+            p.push("|---|---|");
+            for (const g of grupo) p.push(`| ${fid(g)} | \`${cel(g.entrypoint)}\` |`);
+            p.push("");
+          }
         }
         p.push("| | |");
         p.push("|---|---|");
@@ -2011,16 +2343,24 @@ function secaoAmeacas(ctx: ArtifactContext, ft: Fatos, gapsEfetivos: Set<Stride>
             `| ${M.lblAlvo} | ${f.entrypoint === "<contrato>" ? M.alvoContrato : M.alvoEntrypoint(cel(f.entrypoint))} |`,
           );
         }
-        p.push(`| ${M.lblSeveridade} | ${M.valorSeveridade(f.severity)} |`);
+        const sevs = [...new Set(grupo.map((g) => g.severity))];
+        p.push(
+          `| ${M.lblSeveridade} | ${sevs.length > 1 ? M.valorSeveridadeVarias(sevs.join(", ")) : M.valorSeveridade(f.severity)} |`,
+        );
         p.push(`| ${M.lblSolidezAchado} | ${linhaSolidez(ctx, f, muitos)} |`);
         p.push("");
-        p.push(M.hdrEvidenciaBloco);
-        for (const ev of f.evidence) p.push(M.itemEvidencia(ev.tier, T[ev.tier], ev.claim));
+        p.push(agregado ? M.evidenciaCondensada(grupo.length) : M.hdrEvidenciaBloco);
+        for (const ev of compartilhada) p.push(M.itemEvidencia(ev.tier, T[ev.tier], ev.claim));
         p.push("");
+        if (agregado) p.push(M.remCompartilhada(`\`${fid(f)}.R.1\``, `\`${fid(grupo[grupo.length - 1])}.R.1\``));
         const nota = notaInicializacao(ctx, grupo);
         if (nota) p.push(nota);
+        /* ---- sondagem de init (probe): uma chamada, ver notaProbe() ---- */
+        const sonda = notaProbe(ctx, grupo);
+        if (sonda) p.push(sonda.texto);
         if (precisaConfirmar(f)) {
-          p.push(M.aindaNaoAchado(muitos ? M.escopoCadaListado : M.escopoDe(f.entrypoint), fid(f)));
+          const escopo = muitos ? M.escopoCadaListado : M.escopoDe(f.entrypoint);
+          p.push(sonda?.fechado ? M.achadoFechadoPorObservacao(escopo, fid(f)) : M.aindaNaoAchado(escopo, fid(f)));
         }
       }
     }
@@ -2223,7 +2563,22 @@ function secaoRemediacoes(ctx: ArtifactContext, ft: Fatos, gapsEfetivos: Set<Str
  * 4. Did we do a good job?
  * ------------------------------------------------------------------ */
 
-function secaoAvaliacao(ctx: ArtifactContext, ft: Fatos, gapsEfetivos: Set<Stride>, divergencia: Stride[]): string {
+/**
+ * O veredito sai do MESMO validador que o CLI imprime — não de uma contagem própria desta
+ * seção. Duas contagens divergem no primeiro contrato que ninguém testou, e um documento que
+ * se declara submetível enquanto o terminal diz o contrário perde o revisor de uma vez.
+ *
+ * O relatório é calculado sobre o documento ATÉ aqui (seções 1-3). Nada que esta seção
+ * acrescente pode criar ou apagar ameaça, remediação, letra ou id: o que ela escreve é
+ * resposta de auto-avaliação e o próprio veredito.
+ */
+function secaoAvaliacao(
+  ctx: ArtifactContext,
+  ft: Fatos,
+  gapsEfetivos: Set<Stride>,
+  divergencia: Stride[],
+  rel: ReturnType<typeof validateThreatModel>,
+): string {
   const p: string[] = [];
   p.push("## Did we do a good job?\n");
   p.push(M.introAvaliacao);
@@ -2311,6 +2666,28 @@ function secaoAvaliacao(ctx: ArtifactContext, ft: Fatos, gapsEfetivos: Set<Strid
 
   if (divergencia.length) p.push(M.divergencia(divergencia.join(", "), divergencia.length));
 
+  /* --- veredito: três estados, e as duas listas separadas --- */
+  const input = rel.needsInput ?? [];
+  p.push(M.hdrVeredito);
+  p.push(
+    rel.verdict === "submittable"
+      ? M.vereditoOk
+      : rel.verdict === "needs-input"
+        ? M.vereditoInput(input.length)
+        : M.vereditoNao(rel.blockers.length, input.length),
+  );
+  if (rel.blockers.length) {
+    p.push(M.hdrBlockersDoc);
+    rel.blockers.forEach((b, i) => p.push(`${i + 1}. ${cel(b)}`));
+    p.push("");
+  }
+  if (input.length) {
+    p.push(M.hdrInputDoc);
+    p.push(M.notaInputDoc);
+    input.forEach((b, i) => p.push(`${i + 1}. ${cel(b)}`));
+    p.push("");
+  }
+
   return p.join("\n");
 }
 
@@ -2339,7 +2716,11 @@ export function renderThreatModel(ctx: ArtifactContext): string {
   doc.push("---\n");
   doc.push(secaoRemediacoes(ctx, ft, gapsEfetivos));
   doc.push("---\n");
-  doc.push(secaoAvaliacao(ctx, ft, gapsEfetivos, divergencia));
+  // O corpo pronto é a entrada do validador; a §4 é a saída dele. Mesmo desenho da §6 do
+  // monitoring plan, pela mesma razão: o veredito no documento e o veredito do CLI são o
+  // mesmo objeto, não duas contas parecidas.
+  const rel = validateThreatModel(ctx, doc.join("\n"));
+  doc.push(secaoAvaliacao(ctx, ft, gapsEfetivos, divergencia, rel));
 
   return `${doc.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd()}\n`;
 }

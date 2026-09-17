@@ -2,13 +2,15 @@
 import { Command } from "commander";
 import { StrKey } from "@stellar/stellar-sdk";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { modelFromEntries, parseSpecEntries, NETWORKS } from "./spec.ts";
+import { modelFromEntries, parseSpecEntries, NETWORKS, endpointDe, redactUrl, rotuloDaRede } from "./spec.ts";
 import { analyzeModule, requiresAuth, writesStorage, emitsEvent, canUpgradeSelf, callsOut } from "./analyze.ts";
 import { detect, lacunas, fronteiras } from "./detect.ts";
 import { buildContext, resolveTarget, isLocalTarget } from "./pipeline.ts";
 import { renderThreatModel } from "./render/threatmodel.ts";
 import { renderMonitoringPlan } from "./render/monitoring.ts";
 import { validateThreatModel, validateMonitoringPlan } from "./validate.ts";
+import { resumoDeProbes } from "./probe.ts";
+import type { ProbeResult } from "./probe.ts";
 import { setLang, parseLang, msgs, plural } from "./i18n.ts";
 import type { ContractModel } from "./model.ts";
 
@@ -39,6 +41,12 @@ const M = msgs({
     optOut: "output directory",
     optOffline: "do not query the network to observe events (no tier-B baseline)",
     optTimeout: "total budget, in seconds, for the on-chain observation phase",
+    optNoProbe:
+      "skip the init probe (unsigned, read-only simulateTransaction on init-shaped entrypoints; never signs or submits)",
+    resumoProbe: (n: number, g: number, o: number, i: number) =>
+      `${n} init ${plural(n, "finding", "findings")} probed: ${g} guarded · ${o} open · ${i} inconclusive`,
+    probeAberto: (eps: string) =>
+      `⚠ the initializer(s) ${eps} SUCCEEDED in unsigned simulation: any address can initialize this instance now`,
     optDate: "date (UTC) to stamp on the documents (default: today's UTC date)",
 
     /* erros */
@@ -93,10 +101,14 @@ const M = msgs({
     obsFalhou: (erro: string) => `⚠ on-chain observation failed: ${erro}`,
     obsFalhouDetalhe: "the documents were written, but without any tier-B baseline.",
     validacao: (rotulo: string, corpo: string) => `VALIDATION — ${rotulo}: ${corpo}`,
-    submetivel: "submittable",
+    submetivel: "SUBMITTABLE",
     naoSubmetivel: (porque: string) => `NOT submittable${porque}`,
+    verInput: (n: number) => `NEEDS INPUT — ${n} ${plural(n, "item", "items")} for the team (see worksheets)`,
+    verNao: (nb: number, ni: number, porque: string) =>
+      `NOT SUBMITTABLE — ${nb} ${plural(nb, "blocker", "blockers")}${porque}` + (ni ? ` (+ ${ni} ${plural(ni, "item", "items")} for the team)` : ""),
+    rotuloInput: "needs the team:",
     porqueSemJanela: (blockers: number, semJanela: number, comoResolver: string) =>
-      ` — ${blockers} blockers, of which ${semJanela} ${plural(semJanela, "is", "are")} missing observation window (${comoResolver})`,
+      `, of which ${semJanela} ${plural(semJanela, "is", "are")} missing observation window (${comoResolver})`,
     resolverOffline: "run without --offline",
     resolverFalhou: "the collection failed; retry",
     resolverJanela: "collect a larger window",
@@ -120,6 +132,12 @@ const M = msgs({
     optOut: "diretório de saída",
     optOffline: "não consultar a rede para observar eventos (sem baseline nível B)",
     optTimeout: "prazo total, em segundos, da fase de observação on-chain",
+    optNoProbe:
+      "pular a sondagem de init (simulateTransaction não assinada, read-only, nos entrypoints com nome de init; nunca assina nem submete)",
+    resumoProbe: (n: number, g: number, o: number, i: number) =>
+      `${n} ${n === 1 ? "achado" : "achados"} de init sondados: ${g} guarded · ${o} open · ${i} inconclusive`,
+    probeAberto: (eps: string) =>
+      `⚠ o(s) inicializador(es) ${eps} TIVERAM SUCESSO em simulação não assinada: qualquer endereço pode inicializar esta instância agora`,
     optDate: "data (UTC) a estampar nos documentos (default: a data UTC de hoje)",
 
     errSac: "contrato é um Stellar Asset Contract (SAC): não tem WASM nem contractspecv0; não suportado",
@@ -169,15 +187,33 @@ const M = msgs({
     obsFalhou: (erro: string) => `⚠ observação on-chain falhou: ${erro}`,
     obsFalhouDetalhe: "os documentos foram escritos, mas sem nenhum baseline de nível B.",
     validacao: (rotulo: string, corpo: string) => `VALIDAÇÃO — ${rotulo}: ${corpo}`,
-    submetivel: "submetível",
+    submetivel: "SUBMETÍVEL",
     naoSubmetivel: (porque: string) => `NÃO submetível${porque}`,
+    verInput: (n: number) => `FALTA PREENCHER — ${n} ${n === 1 ? "item" : "itens"} para a equipe (ver planilhas)`,
+    verNao: (nb: number, ni: number, porque: string) =>
+      `NÃO SUBMETÍVEL — ${nb} ${nb === 1 ? "bloqueio" : "bloqueios"}${porque}` + (ni ? ` (+ ${ni} ${ni === 1 ? "item" : "itens"} para a equipe)` : ""),
+    rotuloInput: "falta a equipe preencher:",
     porqueSemJanela: (blockers: number, semJanela: number, comoResolver: string) =>
-      ` — ${blockers} blockers, dos quais ${semJanela} ${semJanela === 1 ? "é ausência" : "são ausência"} de janela de observação (${comoResolver})`,
+      `, dos quais ${semJanela} ${semJanela === 1 ? "é ausência" : "são ausência"} de janela de observação (${comoResolver})`,
     resolverOffline: "rode sem --offline",
     resolverFalhou: "a coleta falhou; repita",
     resolverJanela: "colete uma janela maior",
   },
 });
+
+/**
+ * Linhas de sumário da sondagem de init. Exportada porque é a única parte do sumário que
+ * dependeria de rede para ser exercitada — e o `open` é a linha que não pode passar
+ * despercebida: é o único caso em que o achado de front-running é real AGORA.
+ */
+export function linhasDeProbe(probes: ProbeResult[]): string[] {
+  if (!probes.length) return [];
+  const r = resumoDeProbes(probes);
+  const linhas = [M.resumoProbe(r.total, r.guarded, r.open, r.inconclusive)];
+  const abertos = probes.filter((x) => x.kind === "open").map((x) => `\`${x.entrypoint}\``);
+  if (abertos.length) linhas.push(M.probeAberto(abertos.join(", ")));
+  return linhas;
+}
 
 /** Rótulos dos dois documentos: são nomes do template oficial, iguais nos dois idiomas. */
 const ROTULO_TM = "threat model";
@@ -201,7 +237,9 @@ export class ErroDeUso extends Error {}
  */
 export function explicarErro(e: unknown): string | undefined {
   const err = e as { code?: unknown; message?: unknown; path?: unknown };
-  const msg = String(err?.message ?? e ?? "");
+  // O erro do SDK/`fetch` embute a URL chamada, e um RPC pago tem a API key no path.
+  // Redigir AQUI cobre os dois caminhos: a linha que o CLI imprime e qualquer reuso.
+  const msg = redactUrl(String(err?.message ?? e ?? ""));
   const code = err?.code;
 
   if (/Stellar Asset Contract|\bSAC\b/i.test(msg) || (code === 400 && /asset contract/i.test(msg))) {
@@ -224,14 +262,37 @@ export function explicarErro(e: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Rede resolvida: o endpoint por onde falamos com a rede e o rótulo que a saída mostra.
+ *
+ * Os dois são coisas DIFERENTES e foi confundi-los que vazou credencial: `https://<provedor>/v2/<API_KEY>`
+ * era carimbado como "rede" no cabeçalho dos dois documentos, na tabela de inventário, no
+ * comentário do mermaid e no stderr. `rpcUrl` não é renderizado em lugar nenhum; `label` é.
+ */
+export type RedeResolvida = {
+  /** endpoint de RPC — possivelmente com credencial no path. NUNCA renderizar. */
+  rpcUrl: string;
+  /** rótulo, quando o `-n` já é um nome conhecido. Para URL só a passphrase do nó responde. */
+  label?: string;
+};
+
 /** `-n`: nome conhecido ou URL http(s) parseável. Qualquer outra coisa é erro de uso. */
-export function resolverRede(v: string | undefined): string {
+export function resolverRede(v: string | undefined): RedeResolvida {
   const bruto = v ?? process.env.SOROGUARD_RPC_URL ?? "mainnet";
-  if (NETWORKS[bruto]) return bruto;
+  if (NETWORKS[bruto]) return { rpcUrl: endpointDe(bruto), label: bruto };
   if (/^https?:\/\//i.test(bruto)) {
-    try { new URL(bruto); return bruto; } catch { /* cai no erro abaixo */ }
+    try { new URL(bruto); return { rpcUrl: bruto }; } catch { /* cai no erro abaixo */ }
   }
   throw new ErroDeUso(M.errRedeDesconhecida(bruto, listaDeRedes()));
+}
+
+/**
+ * Rótulo de rede pronto para renderizar. Nome conhecido responde sozinho; URL exige
+ * perguntar ao nó (`getNetwork` → passphrase). Uma ida à rede por execução, e falha vira
+ * `custom` — nunca a URL.
+ */
+export async function rotuloDe(r: RedeResolvida): Promise<string> {
+  return r.label ?? (await rotuloDaRede(r.rpcUrl));
 }
 
 /** Um alvo que não é arquivo local precisa ser um contract id válido — checado antes da rede. */
@@ -268,9 +329,10 @@ export function construirPrograma(): Command {
     .option("--debug", M.optDebug, false)
     .action(async (target: string, opts: { network?: string; json: boolean; lang: string }) => {
       setLang(parseLang(opts.lang));
-      const network = resolverRede(opts.network);
+      const rede = resolverRede(opts.network);
       validarAlvo(target);
-      const { wasm, wasmHash, contractId, analyzedFile } = await resolveTarget(target, network);
+      const { wasm, wasmHash, contractId, analyzedFile } = await resolveTarget(target, rede.rpcUrl);
+      const network = await rotuloDe(rede);
       const entries = parseSpecEntries(wasm);
       const parsed = modelFromEntries(entries);
       const model: ContractModel = {
@@ -329,9 +391,9 @@ export function construirPrograma(): Command {
     .action(async (target: string, opts: { network?: string; json: boolean; min: string; lang: string }) => {
       // Os achados nascem no `detect` abaixo: o idioma precisa estar fixado ANTES dele.
       setLang(parseLang(opts.lang));
-      const network = resolverRede(opts.network);
+      const rede = resolverRede(opts.network);
       validarAlvo(target);
-      const { wasm } = await resolveTarget(target, network);
+      const { wasm } = await resolveTarget(target, rede.rpcUrl);
 
       const an = analyzeModule(wasm);
       const ordem = ["Low", "Medium", "High", "Critical"];
@@ -383,13 +445,14 @@ export function construirPrograma(): Command {
     .option("-o, --out <dir>", M.optOut, "out")
     .option("--offline", M.optOffline, false)
     .option("--timeout <s>", M.optTimeout, "60")
+    .option("--no-probe", M.optNoProbe)
     .option("--date <YYYY-MM-DD>", M.optDate)
     .option("--lang <en|pt>", M.optLang, "en")
     .option("--debug", M.optDebug, false)
-    .action(async (target: string, opts: { network?: string; out: string; offline: boolean; timeout: string; date?: string; lang: string }) => {
+    .action(async (target: string, opts: { network?: string; out: string; offline: boolean; timeout: string; probe: boolean; date?: string; lang: string }) => {
       const lang = parseLang(opts.lang);
       setLang(lang);
-      const network = resolverRede(opts.network);
+      const rede = resolverRede(opts.network);
       validarAlvo(target);
       const segundos = Number(opts.timeout);
       if (!Number.isFinite(segundos) || segundos <= 0) throw new ErroDeUso(M.errTimeout(opts.timeout));
@@ -398,8 +461,11 @@ export function construirPrograma(): Command {
       // e o documento diz "(UTC)" ao lado do valor para que isso não pareça erro.
       const generatedAt = opts.date ?? new Date().toISOString().slice(0, 10);
       const ctx = await buildContext({
-        target, network, generatedAt, offline: opts.offline, lang,
+        // Rótulo e endpoint separados: só o rótulo chega ao `ArtifactContext` e aos documentos.
+        target, network: await rotuloDe(rede), rpcUrl: rede.rpcUrl, generatedAt, offline: opts.offline, lang,
         timeoutMs: segundos * 1000,
+        // commander inverte `--no-probe` em `probe: false`; o default continua sondar.
+        probe: opts.probe,
         onProgress: (m) => process.stderr.write(`  … ${m}\n`),
       });
 
@@ -420,6 +486,10 @@ export function construirPrograma(): Command {
       console.log(`\n  ${M.resumoArtifact(ctx.findings.length, ctx.monitors?.length ?? 0, ctx.gaps.length)}`);
       console.log(`  ${M.linhaAnalise(ctx.analysis.soundness, Boolean(ctx.observations?.window.insufficient))}`);
 
+      // A sondagem de init é o predicado que fecha um terço da saída atual (docs/PRECISION-TOP25.md).
+      // O `open` é o único caso que torna o achado real, então ele não pode sair como mais um número.
+      for (const linha of linhasDeProbe(Object.values(ctx.spec.probes ?? {}))) console.log(`  ${linha}`);
+
       // A coleta falhada não pode sair igual a `--offline`: o documento continua sendo escrito,
       // mas o operador precisa saber que o baseline faltou por falha nossa, não por contrato parado.
       if (ctx.observationError) {
@@ -435,8 +505,15 @@ export function construirPrograma(): Command {
         const semJanela = v.blockers.filter((b) => b.includes('baselineTier="none"')).length;
         const comoResolver = ctx.offline ? M.resolverOffline : ctx.observationError ? M.resolverFalhou : M.resolverJanela;
         const porque = !v.submittable && semJanela ? M.porqueSemJanela(v.blockers.length, semJanela, comoResolver) : "";
-        console.log(`\n  ${M.validacao(rot, v.submittable ? M.submetivel : M.naoSubmetivel(porque))}`);
+        const input = v.needsInput ?? [];
+        const corpo =
+          v.verdict === "submittable" || (v.verdict === undefined && v.submittable) ? M.submetivel
+          : v.verdict === "needs-input" ? M.verInput(input.length)
+          : M.verNao(v.blockers.length, input.length, porque);
+        console.log(`\n  ${M.validacao(rot, corpo)}`);
         for (const b of v.blockers) console.log(`    ✖ ${b}`);
+        if (input.length) console.log(`    ${M.rotuloInput}`);
+        for (const b of input) console.log(`    ☐ ${b}`);
         for (const g of gaps.slice(0, 6)) console.log(`    ○ ${g.question} — ${g.detail}`);
       }
       console.log();
@@ -473,8 +550,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   try {
     await program.parseAsync(argv);
   } catch (e) {
+    // `--debug` imprime o erro cru, stack incluso: é o único caminho em que a URL do RPC
+    // pode aparecer, e quem pediu o stack pediu o objeto de erro como ele é.
     if (debug) console.error(e);
-    const linha = e instanceof ErroDeUso ? e.message : (explicarErro(e) ?? String((e as Error)?.message ?? e));
+    const linha = redactUrl(
+      e instanceof ErroDeUso ? e.message : (explicarErro(e) ?? String((e as Error)?.message ?? e)),
+    );
     console.error(M.erroPrefixo(linha));
     if (!debug) console.error(M.dicaDebug);
     process.exitCode = 1;

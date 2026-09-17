@@ -23,16 +23,16 @@ Os números correntes são **gerados**, nunca escritos à mão. `node scripts/st
 
 | Medida | Valor |
 |---|---|
-| Testes (`pnpm test`) | **161 passando** de 161 |
+| Testes (`pnpm test`) | **215 passando** de 215 |
 | Corpus (`corpus/*.wasm`) | **71 contratos de mainnet**, 1,726 entrypoints, 0 falhas de parse |
-| Achados | **145** no total · **2.0 por contrato** |
-| Por classe | 48 `silent-mutation` · 35 `initialization-front-running` · 32 `vulnerable-sdk` · 17 `unauthenticated-state-mutation` · 9 `archival-risk` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
+| Achados | **164** no total · **2.3 por contrato** |
+| Por classe | 48 `silent-mutation` · 38 `vulnerable-sdk` · 35 `initialization-front-running` · 13 `self-implemented-signature-verification` · 10 `unauthenticated-state-mutation` · 9 `archival-risk` · 7 `third-party-state-tampering` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
 | `call_indirect` (análise rebaixada) | **22 de 71** (31%) |
 | Supressões declaradas | **111**<br>52 — read-shaped name: the write probably comes from a shared helper, not from this path<br>46 — reserved `__` function, not directly invocable (CAP-0058)<br>13 — permissionless crank by design (protocol maintenance pattern) |
-| Rebaixamentos (reportados, não suprimidos) | **9**<br>9 — reaches call/try_call — authorization may live in the callee, severity capped at High |
-| Versão de SDK declarada (`rssdkver`) | **38 de 71** |
-| Em faixa afetada pelo CVE-2026-26267 (High) | **31 dos 38** que declaram versão |
-| Linhas (`src` + `test`) | 13,164 em 29 arquivos |
+| Rebaixamentos (reportados, não suprimidos) | **4**<br>4 — reaches call/try_call — authorization may live in the callee, severity capped at High |
+| Versão de SDK declarada (`rssdkver`) | **69 de 71** |
+| Em faixa afetada pelo CVE-2026-26267 (High) | **37 dos 69** que declaram versão |
+| Linhas (`src` + `test`) | 16,092 em 31 arquivos |
 <!-- stats:end -->
 
 | | |

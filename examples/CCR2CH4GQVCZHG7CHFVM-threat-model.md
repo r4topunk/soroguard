@@ -37,82 +37,86 @@ One asymmetry changes how everything below reads: **"does not reach `require_aut
 
 57 exported, 56 invocable entrypoints · 15 reach `require_auth*` · 20 reach storage write · 12 reach `call`/`try_call` · 1 reaches self-code replacement. The difference is 1 reserved `__*` export (`__constructor`) excluded from the invocable count: the host refuses to invoke it directly (CAP-0058), so it is not evaluated as attack surface.
 
-| Entrypoint | auth | writes | event | upgrade | cross-call | fanout |
-|---|---|---|---|---|---|---|
-| `upgrade` | yes | no | yes | yes | no | 31 |
-| `migrate` | yes | yes | yes | no | no | 31 |
-| `version` | no | no | no | no | no | 1 |
-| `schema_version` | no | no | no | no | no | 10 |
-| `get_admin` | no | no | no | no | no | 12 |
-| `transfer_admin` | yes | yes | yes | no | no | 34 |
-| `revoke_upgradeability` | yes | yes | yes | no | no | 34 |
-| `is_upgradeability_revoked` | no | no | no | no | no | 12 |
-| `pause` | yes | yes | yes | no | no | 31 |
-| `unpause` | yes | yes | yes | no | no | 31 |
-| `is_paused` | no | no | no | no | no | 12 |
-| `check_ticks` | no | no | no | no | no | 18 |
-| `block_timestamp` | no | no | no | no | no | 6 |
-| `initialize` | no | yes | yes | no | no | 110 |
-| `swap` | yes | yes | yes | no | yes | 184 |
-| `swap_prefunded` | yes | yes | yes | no | yes | 186 |
-| `set_router_authorized` | yes | yes | no | no | no | 29 |
-| `burn` | yes | yes | yes | no | no | 183 |
-| `collect` | yes | yes | yes | no | yes | 120 |
-| `collect_protocol` | yes | yes | yes | no | yes | 59 |
-| `flash_begin` | yes | yes | yes | no | yes | 96 |
-| `flash_end` | yes | yes | yes | no | yes | 92 |
-| `slot0` | no | no | no | no | no | 22 |
-| `is_initialized` | no | no | no | no | no | 9 |
-| `factory` | no | no | no | no | no | 16 |
-| `token0` | no | no | no | no | no | 17 |
-| `token1` | no | no | no | no | no | 17 |
-| `fee` | no | no | no | no | no | 16 |
-| `tick_spacing` | no | no | no | no | no | 17 |
-| `flash_executor` | no | no | no | no | no | 16 |
-| `get_protocol_fee_0` | no | no | no | no | yes | 22 |
-| `get_protocol_fee_1` | no | no | no | no | yes | 22 |
-| `get_tick_bitmap` | no | no | no | no | no | 22 |
-| `liquidity` | no | no | no | no | no | 21 |
-| `fee_growth_global_0_x128` | no | no | no | no | no | 21 |
-| `fee_growth_global_1_x128` | no | no | no | no | no | 21 |
-| `protocol_fees` | no | no | no | no | no | 23 |
-| `ticks` | no | no | no | no | no | 45 |
-| `get_position_fee_data` | no | no | no | no | no | 48 |
-| `get_full_pool_state` | no | no | no | no | no | 24 |
-| `get_pool_state_with_balances` | no | no | no | no | yes | 37 |
-| `snapshot_cumulatives_inside` | no | yes | no | no | no | 114 |
-| `observe_single` | no | yes | no | no | no | 92 |
-| `observe` | no | yes | no | no | no | 92 |
-| `poke_oracle` | no | yes | no | no | no | 97 |
-| `poke_oracle_with_hints` | no | yes | no | no | no | 97 |
-| `get_oracle_hints` | no | no | no | no | no | 24 |
-| `get_checkpoint` | no | no | no | no | no | 35 |
-| `get_oracle_status` | no | no | no | no | no | 32 |
-| `mint` | yes | yes | yes | no | yes | 199 |
-| `get_tick_bitmap_public` | no | no | no | no | no | 20 |
-| `get_tick_bitmap_range_public` | no | no | no | no | no | 24 |
-| `get_ticks_batch` | no | no | no | no | no | 49 |
-| `quote_exact_input` | no | no | no | no | yes | 121 |
-| `quote_exact_output` | no | no | no | no | yes | 121 |
-| `positions` | no | no | no | no | no | 45 |
+| Entrypoint | auth | writes | durability | event | upgrade | cross-call | fanout |
+|---|---|---|---|---|---|---|---|
+| `upgrade` | yes | no | — | yes | yes | no | 31 |
+| `migrate` | yes | yes | `inst` | yes | no | no | 31 |
+| `version` | no | no | — | no | no | no | 1 |
+| `schema_version` | no | no | — | no | no | no | 10 |
+| `get_admin` | no | no | — | no | no | no | 12 |
+| `transfer_admin` | yes | yes | `inst` | yes | no | no | 34 |
+| `revoke_upgradeability` | yes | yes | `inst` | yes | no | no | 34 |
+| `is_upgradeability_revoked` | no | no | — | no | no | no | 12 |
+| `pause` | yes | yes | `inst` | yes | no | no | 31 |
+| `unpause` | yes | yes | `inst` | yes | no | no | 31 |
+| `is_paused` | no | no | — | no | no | no | 12 |
+| `check_ticks` | no | no | — | no | no | no | 18 |
+| `block_timestamp` | no | no | — | no | no | no | 6 |
+| `initialize` | no | yes | `temp`, `inst` | yes | no | no | 110 |
+| `swap` | yes | yes | `temp`, `pers`, `inst` | yes | no | yes | 184 |
+| `swap_prefunded` | yes | yes | `temp`, `pers`, `inst` | yes | no | yes | 186 |
+| `set_router_authorized` | yes | yes | `pers` | no | no | no | 29 |
+| `burn` | yes | yes | `temp`, `pers`, `inst` | yes | no | no | 183 |
+| `collect` | yes | yes | `pers`, `inst` | yes | no | yes | 120 |
+| `collect_protocol` | yes | yes | `inst` | yes | no | yes | 59 |
+| `flash_begin` | yes | yes | `inst` | yes | no | yes | 96 |
+| `flash_end` | yes | yes | `inst` | yes | no | yes | 92 |
+| `slot0` | no | no | — | no | no | no | 22 |
+| `is_initialized` | no | no | — | no | no | no | 9 |
+| `factory` | no | no | — | no | no | no | 16 |
+| `token0` | no | no | — | no | no | no | 17 |
+| `token1` | no | no | — | no | no | no | 17 |
+| `fee` | no | no | — | no | no | no | 16 |
+| `tick_spacing` | no | no | — | no | no | no | 17 |
+| `flash_executor` | no | no | — | no | no | no | 16 |
+| `get_protocol_fee_0` | no | no | — | no | no | yes | 22 |
+| `get_protocol_fee_1` | no | no | — | no | no | yes | 22 |
+| `get_tick_bitmap` | no | no | — | no | no | no | 22 |
+| `liquidity` | no | no | — | no | no | no | 21 |
+| `fee_growth_global_0_x128` | no | no | — | no | no | no | 21 |
+| `fee_growth_global_1_x128` | no | no | — | no | no | no | 21 |
+| `protocol_fees` | no | no | — | no | no | no | 23 |
+| `ticks` | no | no | — | no | no | no | 45 |
+| `get_position_fee_data` | no | no | — | no | no | no | 48 |
+| `get_full_pool_state` | no | no | — | no | no | no | 24 |
+| `get_pool_state_with_balances` | no | no | — | no | no | yes | 37 |
+| `snapshot_cumulatives_inside` | no | yes | `temp` | no | no | no | 114 |
+| `observe_single` | no | yes | `temp` | no | no | no | 92 |
+| `observe` | no | yes | `temp` | no | no | no | 92 |
+| `poke_oracle` | no | yes | `temp`, `inst` | no | no | no | 97 |
+| `poke_oracle_with_hints` | no | yes | `temp`, `inst` | no | no | no | 97 |
+| `get_oracle_hints` | no | no | — | no | no | no | 24 |
+| `get_checkpoint` | no | no | — | no | no | no | 35 |
+| `get_oracle_status` | no | no | — | no | no | no | 32 |
+| `mint` | yes | yes | `temp`, `pers`, `inst` | yes | no | yes | 199 |
+| `get_tick_bitmap_public` | no | no | — | no | no | no | 20 |
+| `get_tick_bitmap_range_public` | no | no | — | no | no | no | 24 |
+| `get_ticks_batch` | no | no | — | no | no | no | 49 |
+| `quote_exact_input` | no | no | — | no | no | yes | 121 |
+| `quote_exact_output` | no | no | — | no | no | yes | 121 |
+| `positions` | no | no | — | no | no | no | 45 |
 
 In every column, "yes" means it **reaches** the corresponding host function on some call-graph path, not that it always executes it.
+
+**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` (`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, so a literal at the call site is that argument by construction. The three durabilities are not interchangeable — a `Temporary` entry is deleted permanently when it expires and CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on every invocation. `?` means the entrypoint writes but the storage type reaches the call computed, typically through a generic helper that takes durability as a parameter; `—` means no write is reached. Read literally at 30 of 32 storage call sites in this module. This column is a description of the contract's storage layout, not a finding: each durability is correct for some data and wrong for other data, and which one this contract holds is not derivable from the bytecode.
 
 ### Inferred data stores
 
 - Keys read from the module's linear memory: `bline`, `FLOCK`, `padmin`, `params`, `pstate`, `schema_v`.
 
-The durability of each key (`temporary` / `persistent` / `instance`) is a runtime argument and **does not appear in the bytecode** — do not assume it from this list.
+Durability is **not** attributable to a key from this list. The `StorageType` is readable per call site (see the `durability` column above), but pairing *which key* goes to *which durability* needs dataflow from the key to the call, which this analysis does not do — a single entrypoint routinely writes several keys at different durabilities. Do not assume the durability of any key below.
 
 ### On-chain activity observed (tier B)
 
-Window: ledgers 64345409–64466071 (120663 ledgers, ~185.79h).
+Window: ledgers 64346922–64467583 (120662 ledgers, ~185.55h).
+
+window of 120662 ledgers (~186 h) — limited by RPC retention.
 
 | Topic | Occurrences | Ledgers | Events/hour |
 |---|---|---|---|
-| `swap` | 2319 | 64345419–64465842 | 12.482 |
+| `swap` | 2319 | 64347217–64466954 | 12.498 |
 
-Topics declared in the spec and not observed in the window: `init`, `mint`, `burn`, `collect`, `collect_p`, `flash_begin`, `flash_end`, `upgraded`, `migrated`, `admin_xfer`, `upg_revoked`, `paused`, `unpaused`. Absence over a ~185.79 h window is not evidence the action never happens — only that it did not happen in that window.
+Topics declared in the spec and not observed in the window: `init`, `mint`, `burn`, `collect`, `collect_p`, `flash_begin`, `flash_end`, `upgraded`, `migrated`, `admin_xfer`, `upg_revoked`, `paused`, `unpaused`. Absence over a ~185.55 h window is not evidence the action never happens — only that it did not happen in that window.
 
 ### Data flow diagram
 
@@ -129,7 +133,7 @@ flowchart LR
     e_deployer["Deployer — same transaction as the deployment (atomic constructor, CAP-0058)"]
     e_observador["Off-chain consumer of the event stream — getEvents"]
   end
-  subgraph tb_auth["require_auth* reachable on some path — who is authorized (caller vs. admin) is not derivable"]
+  subgraph tb_auth["require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap"]
     p_upgrade(["upgrade — reaches (hops to host fn): require_auth 2, read 4†, event 1, self-code upgrade 1 ⚠ † = via shared helper, tier C"])
     p_migrate(["migrate — reaches (hops to host fn): require_auth 2, read 4†, write 2, event 1 ⚠ † = via shared helper, tier C"])
     p_transfer_admin(["transfer_admin — reaches (hops to host fn): require_auth 2, read 4†, write 2, event 1 ⚠ † = via shared helper, tier C"])
@@ -362,12 +366,12 @@ The diagram comes straight out of the analysis: each `process` is a module expor
 | Trust boundary | Contained nodes |
 |---|---|
 | Outside the contract — untrusted actors | `e_anonimo`, `e_autorizado`, `e_deployer`, `e_observador` |
-| require_auth* reachable on some path — who is authorized (caller vs. admin) is not derivable | `p_upgrade`, `p_migrate`, `p_transfer_admin`, `p_revoke_upgradeability`, `p_pause`, `p_unpause`, `p_swap`, `p_swap_prefunded`, `p_set_router_authorized`, `p_burn`, `p_collect`, `p_collect_protocol`, `p_flash_begin`, `p_flash_end`, `p_mint` |
+| require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap | `p_upgrade`, `p_migrate`, `p_transfer_admin`, `p_revoke_upgradeability`, `p_pause`, `p_unpause`, `p_swap`, `p_swap_prefunded`, `p_set_router_authorized`, `p_burn`, `p_collect`, `p_collect_protocol`, `p_flash_begin`, `p_flash_end`, `p_mint` |
 | No authorization boundary — no path reaches require_auth* in this module (sound for this call graph) | `p_version`, `p_schema_version`, `p_get_admin`, `p_is_upgradeability_revoked`, `p_is_paused`, `p_check_ticks`, `p_block_timestamp`, `p_initialize`, `p_slot0`, `p_is_initialized`, `p_factory`, `p_token0`, `p_token1`, `p_fee`, `p_tick_spacing`, `p_flash_executor`, `p_get_protocol_fee_0`, `p_get_protocol_fee_1`, `p_get_tick_bitmap`, `p_liquidity`, `p_fee_growth_global_0_x128`, `p_fee_growth_global_1_x128`, `p_protocol_fees`, `p_ticks`, `p_get_position_fee_data`, `p_get_full_pool_state`, `p_get_pool_state_with_balances`, `p_snapshot_cumulatives_inside`, `p_observe_single`, `p_observe`, `p_poke_oracle`, `p_poke_oracle_with_hints`, `p_get_oracle_hints`, `p_get_checkpoint`, `p_get_oracle_status`, `p_get_tick_bitmap_public`, `p_get_tick_bitmap_range_public`, `p_get_ticks_batch`, `p_quote_exact_input`, `p_quote_exact_output`, `p_positions` |
 | Lifecycle — invoked by the deployment or by the host, not by an arbitrary caller | `p___constructor` |
 | Third-party code — reached through call/try_call | `x_callee` |
 
-**How to read the authorization boundary (tier C, name-shape heuristic).** Reaching `require_auth*` is not by itself access control. On the 11 user-shaped nodes (`migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more) it is the caller authorizing their own address — the expected shape of a user operation, with no privileged key behind it. Only the 4 admin-shaped nodes (`upgrade`, `transfer_admin`, `pause` and `set_router_authorized`) sit behind a key holder whose custody the review has to trace. The split comes from the name, not from the bytecode: the call graph never shows *whose* `Address` is authorized.
+**How to read the authorization boundary (tier C, name-shape heuristic).** The boundary says only that `require_auth*` is reachable, and that single label covers two different mechanisms. **Access control** — 4 admin-shaped nodes (`upgrade`, `transfer_admin`, `pause` and `set_router_authorized`): there the authorized `Address` is a privileged role, and the review has to trace its custody (multisig or a single key). **Self-authorization** — 11 user-shaped nodes (`migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more): there `require_auth` is the caller authorizing their own address, the expected shape of a user operation (`swap`, `deposit`, `withdraw`), with no privileged key behind it and nothing to trace. Reading the whole boundary as access control overstates it; reading it as self-authorization understates it. The split comes from the name, not from the bytecode: the call graph never shows *whose* `Address` is authorized.
 
 ---
 
@@ -390,7 +394,7 @@ The diagram comes straight out of the analysis: each `process` is a module expor
 
 | Threat | Issues |
 |---|---|
-| **S**poofing | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. Requires manual review of the off-chain flow: custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. Where identity is asserted in this contract: 15 invocable entrypoints reach `require_auth*`. Admin-shaped (4, key-holder trace required): `upgrade`, `transfer_admin`, `pause` and `set_router_authorized` — those are the calls whose `Address` the review has to trace back to a key holder: custody, multisig or a single key. User-shaped (11, no key-holder trace): `migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more — there `require_auth` is the caller authorizing their own address, which is the expected shape of a user operation, not access control; there is no privileged key behind it to trace. This split is a name-shape heuristic (tier C), not a bytecode fact — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's. |
+| **S**poofing | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. Requires manual review of the off-chain flow: custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. Where identity is asserted in this contract: 15 invocable entrypoints reach `require_auth*`. Access control (4 admin-shaped, key-holder trace required): `upgrade`, `transfer_admin`, `pause` and `set_router_authorized` — those are the calls whose `Address` is a privileged role and has to be traced back to a key holder: custody, multisig or a single key. Self-authorization (11 user-shaped, no key-holder trace): `migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more — there `require_auth` is the caller authorizing their own address (`swap`, `deposit`, `withdraw` are the usual shape), which is a user operation, not access control; there is no privileged key behind it to trace. This split is a name-shape heuristic (tier C), not a bytecode fact — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's. |
 | **T**ampering | _No threat derivable from the bytecode._ Declared gap — no finding derived for this contract. Three detectors feed this letter and none fired: `write-before-auth` (compares bytecode offsets *within the same body*), `host-prng-in-value-path` (host PRNG on a path that changes state or calls out) and `vulnerable-sdk` when the advisory is not about authorization. The write-before-auth detector compares offsets *inside a single body* and found no body where a write precedes the first `require_auth`. It cannot see the ordering when the write and the authorization live in different functions, so this is absence of signal, not a demonstration that the ordering is correct. Watch the classification: state tampering through missing authorization lives under Elevation (1 finding), not here. What still requires manual review: validation of the arguments entering the entrypoints, and trust in data coming from another contract (oracle, router) — neither is derivable from reachability. |
 | **R**epudiation | **Repudiate.1** — 6 of 20 state-changing entrypoints emit no event · tiers A+C · severity Medium (C) |
 | **I**nformation Disclosure | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. All ledger state in Soroban is public by construction, so "excessive disclosure" is a question about *which data the protocol chose to put on-chain* — a product decision the WASM does not record. The bytecode also does not say what the arguments and the event topics mean. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — a structural limit. Requires manual review: which fields go into storage and into event topics, and whether any of them is data that should not be public or that gives an advantage to whoever reads the ledger before the transaction settles. The concrete surface to review in this contract: inferred storage keys `bline`, `FLOCK`, `padmin`, `params`, `pstate` and `schema_v`; declared event topics `init`, `swap`, `mint`, `burn`, `collect`, `collect_p` and 8 more. Those are the fields that end up readable on a public ledger. |
@@ -413,6 +417,7 @@ The template asks for at least one issue per letter. Letters without a finding a
 **Evidence**
 
 - **[A]** *(bytecode fact)* — Reach put_contract_data and do not reach contract_event: set_router_authorized, snapshot_cumulatives_inside, observe_single, observe, poke_oracle, poke_oracle_with_hints.
+- **[C]** *(inference — requires human review)* — Severity rule applied (class of the silent action, not the silent/state-changing fraction): High when any silent entrypoint is upgrade-capable or admin/permission-shaped by name; Low when every silent entrypoint is an init-shaped one-shot; Medium otherwise. Here: no upgrade-capable or admin/permission-shaped silent entrypoint → Medium.
 - **[C]** *(inference — requires human review)* — Without an event there is no off-chain proof that the action happened, and the change is only detectable by state diff — which makes real-time monitoring of those actions unfeasible.
 
 #### Elevation.1 — `initialize` reaches state initialization without requiring authorization
@@ -434,13 +439,19 @@ The template asks for at least one issue per letter. Letters without a finding a
 - **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 2 hops → Medium.
 - **[C]** *(inference — requires human review)* — The contract DOES export `__constructor`, so the deploy itself initializes atomically (CAP-0058). An init-shaped entrypoint kept alongside it is either a second-stage initializer or a legacy one kept for compatibility — in both readings the risk is front-running / re-initialization of that stage, not a generic unauthenticated writer.
 
-> **Tier B/C note.** Observed traffic (2319 events over ~185.79 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
+> **Tier B/C note.** Observed traffic (2319 events over ~185.55 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
+
+> **Init probe (tier B).**
+>
+> - `initialize` — Probe (unsigned simulateTransaction, ledger 64467583): **guarded** — simulation reverted with Error(Contract, #41) = `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+>
+> The front-running window is closed on this instance; residual risk is limited to a future re-deploy of the same code with the same non-atomic initialization.
 
 ### Declared gaps
 
 #### **S**poofing
 
-**Declared gap — not derivable from the bytecode.** The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. **Requires manual review of the off-chain flow:** custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. **Where identity is asserted in this contract:** 15 invocable entrypoints reach `require_auth*`. **Admin-shaped (4, key-holder trace required):** `upgrade`, `transfer_admin`, `pause` and `set_router_authorized` — those are the calls whose `Address` the review has to trace back to a key holder: custody, multisig or a single key. **User-shaped (11, no key-holder trace):** `migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more — there `require_auth` is the caller authorizing their own address, which is the expected shape of a user operation, not access control; there is no privileged key behind it to trace. **This split is a name-shape heuristic (tier C), not a bytecode fact** — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's.
+**Declared gap — not derivable from the bytecode.** The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. **Requires manual review of the off-chain flow:** custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. **Where identity is asserted in this contract:** 15 invocable entrypoints reach `require_auth*`. **Access control (4 admin-shaped, key-holder trace required):** `upgrade`, `transfer_admin`, `pause` and `set_router_authorized` — those are the calls whose `Address` is a privileged role and has to be traced back to a key holder: custody, multisig or a single key. **Self-authorization (11 user-shaped, no key-holder trace):** `migrate`, `revoke_upgradeability`, `unpause`, `swap`, `swap_prefunded`, `burn` and 5 more — there `require_auth` is the caller authorizing their own address (`swap`, `deposit`, `withdraw` are the usual shape), which is a user operation, not access control; there is no privileged key behind it to trace. **This split is a name-shape heuristic (tier C), not a bytecode fact** — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's.
 
 #### **T**ampering
 
@@ -500,3 +511,17 @@ Outside the scope of this run — it depends on audits, manual review and incide
   - Spoofing and Information Disclosure do not come out of the bytecode: they depend on identity and on a product decision about which data goes onto a public ledger, and neither is in the binary. Measured on the calibration corpus: zero findings in 100% of the 75 mainnet contracts (`docs/CALIBRACAO.md`). Filling those two letters with generic text to satisfy the template's "≥1 per letter" is what would get the document discarded by the first competent reviewer. What this run hands the manual review for those two letters, in numbers: 15 of 56 invocable entrypoints reaching `require_auth*`, 6 inferred storage keys and 14 declared event topics.
   - There is on-chain observation (tier B) over the window recorded in the first section, and 1 monitor in the sibling plan anchors a baseline on it instead of on a plausible number.
   - What this model does **not** cover, by construction: economic design (incentives, settlement, oracle), governance and custody of the privileged keys, security of the frontend and of the infrastructure that builds the transactions, and whether the address authorized in each `require_auth` is the right address. None of those questions can be answered from the binary.
+
+### Submission verdict
+
+**NEEDS INPUT.** The tool's own checks pass; 5 items below are input that no bytecode or on-chain analysis produces. Filling them is what makes this document submittable — nothing in the analysis has to change.
+
+### Input the team must provide before submitting
+
+None of these comes out of a binary or out of the chain. Each line names the worksheet it is filled from; the analysis above does not change when they are answered.
+
+1. Write section 1, "What are we working on?": what the protocol does, who the actors are, what value it holds in custody and which trust assumptions live off-chain. Worksheet: the *Analyzed object* table and the measured surface right below the gap notice in section 1 — the bytecode records none of that, so no analysis closes this one.
+2. STRIDE letter Spoof has no issue — the template requires at least one; fill it from the worksheet in the Spoof gap section (it lists the concrete surface to review).
+3. STRIDE letter Tamper has no issue — the template requires at least one; fill it from the worksheet in the Tamper gap section (it lists the concrete surface to review).
+4. STRIDE letter Info has no issue — the template requires at least one; fill it from the worksheet in the Info gap section (it lists the concrete surface to review).
+5. STRIDE letter DoS has no issue — the template requires at least one; fill it from the worksheet in the DoS gap section (it lists the concrete surface to review).

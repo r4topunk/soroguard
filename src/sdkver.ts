@@ -1,4 +1,3 @@
-import { xdr } from "@stellar/stellar-sdk";
 import { parseModule } from "./wasm.ts";
 import { allHostFns, hostFn } from "./hostfns.ts";
 import { msgs } from "./i18n.ts";
@@ -10,7 +9,20 @@ import { msgs } from "./i18n.ts";
  * nomes trait/inerente); o que só o artefato mostra é qual SDK compilou o binário que está
  * no ledger — o repositório pode ter sido atualizado depois do deploy.
  */
-export type SdkInfo = { version?: string; commit?: string; raw: Record<string, string> };
+export type SdkInfo = {
+  version?: string;
+  commit?: string;
+  raw: Record<string, string>;
+  /** o módulo tem ao menos uma custom section `contractmetav0` */
+  present?: boolean;
+  /**
+   * a decodificação parou antes do fim de alguma seção. Com isto `raw` é PARCIAL: a ausência
+   * de `rssdkver` deixa de ser "não declarado" e vira "não lido" — estados diferentes.
+   */
+  partial?: boolean;
+  /** offset (em bytes, dentro da seção) da entrada malformada que interrompeu a leitura */
+  partialAt?: number;
+};
 
 /**
  * Faixa afetada. O limite superior precisa distinguir `<=` de `<` porque os dois advisories
@@ -64,6 +76,8 @@ const M = msgs({
     adv2Trigger:
       "Only affects contracts that take `Fr` (BN254/BLS12-381) as input and compare it with ==/!=/assert_eq! without modular reduction.",
     cmpNaoParseavel: (v: string) => `cmp: version not parseable: ${v}`,
+    metaParcial: (off: number) =>
+      `⟨contractmetav0 could not be decoded past byte ${off}; rssdkver was not read⟩`,
     faixaNaoParseavel: (min: string, max: string) => `advisory range not parseable: ${min}..${max}`,
   },
   pt: {
@@ -75,6 +89,8 @@ const M = msgs({
     adv2Trigger:
       "Só afeta contratos que recebem `Fr` (BN254/BLS12-381) de entrada e o comparam com ==/!=/assert_eq! sem redução modular.",
     cmpNaoParseavel: (v: string) => `cmp: versão não parseável: ${v}`,
+    metaParcial: (off: number) =>
+      `⟨contractmetav0 não pôde ser decodificada além do byte ${off}; rssdkver não foi lido⟩`,
     faixaNaoParseavel: (min: string, max: string) => `faixa de advisory não parseável: ${min}..${max}`,
   },
 });
@@ -179,26 +195,112 @@ export function inRange(v: ParsedVersion, r: Range): boolean {
   return cmpParsed(v, upper) < 0;
 }
 
-export function readSdkMeta(wasm: Uint8Array): SdkInfo {
-  const sec = parseModule(wasm).customSections.get("contractmetav0");
-  const raw: Record<string, string> = {};
-  if (sec) {
-    try {
-      const entries: any[] = (xdr as any).decodeStream(xdr.ScMetaEntry, Buffer.from(sec), "raw");
-      for (const e of entries) {
-        // decodeStream(..., "raw") nomeia o braço da união como `v0`;
-        // a API de união do SDK expõe `scMetaV0()`. Lemos as duas formas.
-        const v = typeof e?.scMetaV0 === "function" ? e.scMetaV0() : (e?.scMetaV0 ?? e?.v0);
-        if (!v) continue;
-        const s = (x: any) => (x?.bytes ? Buffer.from(x.bytes).toString() : String(x ?? ""));
-        raw[s(typeof v.key === "function" ? v.key() : v.key)] = s(typeof v.val === "function" ? v.val() : v.val);
+/**
+ * TODAS as custom sections `contractmetav0` do módulo, na ordem em que aparecem.
+ *
+ * `parseModule` guarda as custom sections num `Map` por nome, e o formato WASM permite
+ * repetir o nome: a toolchain grava uma segunda `contractmetav0` (com `cliver`,
+ * `source_repo`) depois da que o `soroban-sdk` gravou (com `rsver`, `rssdkver`), e o Map
+ * ficava só com a última. Medido sobre os 25 code hashes mais invocados da mainnet: 11
+ * deles saíam como "SDK não declarado" por causa disso, perdendo 6 achados `vulnerable-sdk`.
+ *
+ * O walker aqui é deliberadamente raso — só o cabeçalho de seção — e tolerante: um módulo
+ * que ele não consegue varrer devolve o que já coletou, e o chamador marca `partial`.
+ */
+function metaSections(wasm: Uint8Array): { sections: Uint8Array[]; truncated: boolean } {
+  const sections: Uint8Array[] = [];
+  const leb = (p: number): [number, number] => {
+    let r = 0, s = 0;
+    for (let n = 0; n < 5; n++) {
+      if (p >= wasm.length) throw new Error("LEB128 truncado");
+      const x = wasm[p++];
+      r |= (x & 0x7f) << s;
+      if (!(x & 0x80)) return [r >>> 0, p];
+      s += 7;
+    }
+    throw new Error("LEB128 longo demais");
+  };
+  try {
+    let p = 8; // pula magic + version; `parseModule` já validou o magic para os consumidores
+    while (p < wasm.length) {
+      const id = wasm[p++];
+      let len: number;
+      [len, p] = leb(p);
+      const end = p + len;
+      if (end > wasm.length) throw new Error("seção ultrapassa o fim do módulo");
+      if (id === 0) {
+        let nameLen: number, q: number;
+        [nameLen, q] = leb(p);
+        const nome = Buffer.from(wasm.subarray(q, q + nameLen)).toString();
+        if (nome === "contractmetav0") sections.push(wasm.subarray(q + nameLen, end));
       }
-    } catch { /* meta ilegível: devolvemos vazio em vez de adivinhar */ }
+      p = end;
+    }
+  } catch {
+    return { sections, truncated: true };
+  }
+  return { sections, truncated: false };
+}
+
+/**
+ * Leitor tolerante de `ScMetaEntry`, entrada por entrada, sobre os bytes crus.
+ *
+ * XDR: u32 de discriminante (0 = `ScMetaV0`), depois `ScMetaV0 { key: string, val: string }`,
+ * e uma string XDR é u32 de tamanho + bytes + padding até múltiplo de 4.
+ *
+ * A versão anterior usava `xdr.decodeStream(...)` dentro de um `try/catch` que engolia o erro
+ * e devolvia o mapa parcial SEM dizer que era parcial — uma entrada estranha no meio fazia o
+ * `rssdkver` que vinha depois sumir, e o relatório dizia "nenhum SDK declarado". Aqui uma
+ * entrada malformada interrompe a leitura da seção e fica REGISTRADA (`partial` + offset).
+ */
+function decodeMetaEntries(sec: Uint8Array, raw: Record<string, string>): { partial: boolean; partialAt?: number } {
+  const buf = Buffer.from(sec);
+  let off = 0;
+  const u32 = (): number => {
+    if (off + 4 > buf.length) throw new Error("u32 truncado");
+    const v = buf.readUInt32BE(off);
+    off += 4;
+    return v;
+  };
+  const str = (): string => {
+    const len = u32();
+    const pad = (4 - (len % 4)) % 4;
+    if (len > buf.length - off || off + len + pad > buf.length) throw new Error("string XDR truncada");
+    const s = buf.subarray(off, off + len).toString("utf8");
+    off += len + pad;
+    return s;
+  };
+  while (off < buf.length) {
+    const inicio = off;
+    try {
+      const disc = u32();
+      if (disc !== 0) throw new Error(`discriminante desconhecido: ${disc}`);
+      const key = str();
+      const val = str();
+      raw[key] = val;
+    } catch {
+      return { partial: true, partialAt: inicio };
+    }
+  }
+  return { partial: false };
+}
+
+export function readSdkMeta(wasm: Uint8Array): SdkInfo {
+  // `parseModule` valida o magic e falha fechado em módulo truncado; mantê-lo no caminho
+  // preserva esse contrato para quem chama `readSdkMeta` com bytes arbitrários.
+  parseModule(wasm);
+  const { sections, truncated } = metaSections(wasm);
+  const raw: Record<string, string> = {};
+  let partial = truncated;
+  let partialAt: number | undefined;
+  for (const sec of sections) {
+    const r = decodeMetaEntries(sec, raw);
+    if (r.partial && !partial) { partial = true; partialAt = r.partialAt; }
   }
   // `rssdkver` costuma vir como "22.0.8#<commit>"
   const rssdkver = raw["rssdkver"];
   const [version, commit] = rssdkver ? rssdkver.split("#") : [undefined, undefined];
-  return { version, commit, raw };
+  return { version, commit, raw, present: sections.length > 0, partial, partialAt };
 }
 
 /**
@@ -210,7 +312,15 @@ export type VersionEval =
   | { status: "nao-parseavel"; raw: string }
   | { status: "avaliada"; parsed: ParsedVersion; advisories: Advisory[] };
 
-export function evaluateVersion(version: string | undefined): VersionEval {
+export function evaluateVersion(v: string | undefined | SdkInfo): VersionEval {
+  const meta = typeof v === "object" && v !== null ? v : undefined;
+  const version = meta ? meta.version : (v as string | undefined);
+  // Ausência de `rssdkver` num mapa que SABEMOS estar incompleto não é "não declarado":
+  // é "não lido". Sem esta distinção o documento afirma ausência de exposição a partir de
+  // uma falha nossa de parse — que é exatamente como 6 achados de advisory se perderam.
+  if (!version && meta?.partial) {
+    return { status: "nao-parseavel", raw: M.metaParcial(meta.partialAt ?? 0) };
+  }
   if (!version) return { status: "ausente" };
   const parsed = parseVersion(version);
   if (!parsed) return { status: "nao-parseavel", raw: version };

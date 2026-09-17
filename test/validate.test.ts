@@ -26,6 +26,13 @@ const DATA = "2026-09-17";
 const ctxAlvo = async (): Promise<ArtifactContext> =>
   buildContext({ target: CORPUS + ALVO, network: "mainnet", generatedAt: DATA, offline: true });
 
+/**
+ * Tudo que barra a submissão, junto. O relatório separa o que a FERRAMENTA deveria ter
+ * fechado (`blockers`) do que só a equipe fecha (`needsInput`); onde o teste cobra "isto
+ * barra a submissão" sem cobrar de quem é a pendência, a lista é a união das duas.
+ */
+const pendencias = (r: { blockers: string[]; needsInput?: string[] }) => [...r.blockers, ...(r.needsInput ?? [])];
+
 const item = (r: { items: { question: string; status: string; detail: string }[] }, frag: string) => {
   const i = r.items.find((x) => x.question.includes(frag));
   assert.ok(i, `item de checklist não encontrado: ${frag}`);
@@ -81,16 +88,23 @@ test("letra do STRIDE sem issue bloqueia a submissão, mesmo com a lacuna bem de
   // O template oficial pede ≥1 issue por letra. Lacuna honesta continua sendo o texto certo do
   // documento — o que não pode é o veredito chamar isso de submetível.
   for (const l of lacunas) {
+    // Letra vazia continua barrando a submissão — mas como PREENCHIMENTO da equipe: a planilha
+    // da própria lacuna diz qual é a superfície, e não há análise que a feche.
     assert.ok(
-      r.blockers.some((b) => b.includes(`STRIDE letter ${l} has no issue`)),
-      `letra ${l} está em lacuna e não virou blocker`,
+      (r.needsInput ?? []).some((b) => b.includes(`STRIDE letter ${l} has no issue`)),
+      `letra ${l} está em lacuna e não entrou em needsInput`,
     );
     assert.ok(
-      r.blockers.some((b) => b.includes(`fill it from the worksheet in the ${l} gap section`)),
-      `o blocker de ${l} não diz de onde tirar a issue`,
+      (r.needsInput ?? []).some((b) => b.includes(`fill it from the worksheet in the ${l} gap section`)),
+      `a pendência de ${l} não diz de onde tirar a issue`,
+    );
+    assert.ok(
+      !r.blockers.some((b) => b.includes(`STRIDE letter ${l} has no issue`)),
+      `letra ${l} saiu como falha da ferramenta, e não como preenchimento da equipe`,
     );
   }
   assert.equal(r.submittable, false, "documento com letra sem issue saiu como submetível");
+  assert.notEqual(r.verdict, "submittable");
 
   // e o checklist conta quantas letras estão de fato preenchidas
   const it = item(r, "STRIDE letter");
@@ -266,8 +280,8 @@ test("--lang pt produz checklist e blockers em português", async () => {
     assert.equal(item(r, "O baseline vem de observação").status, "gap");
     assert.ok(item(r, "Cada monitor tem dono nomeado"), "pergunta de dono não saiu em português");
     assert.ok(
-      r.blockers.some((b) => /Atribuir dono e canal de notificação/.test(b)),
-      `blocker de dono não saiu em português: ${r.blockers.join(" | ")}`,
+      (r.needsInput ?? []).some((b) => /Atribuir dono e canal de notificação/.test(b)),
+      `pendência de dono não saiu em português (ou não foi para needsInput): ${pendencias(r).join(" | ")}`,
     );
     // as seções do template continuam em inglês nos dois idiomas
     assert.match(md, /## Did we do a good job\?/);
@@ -309,13 +323,14 @@ test("(1c) monitor que não passa por getEvents não é acusado de falta de jane
   const comJanela: ArtifactContext = { ...ctx, offline: undefined, observations: { window: JANELA, events: [{ topic: "x", count: 5, firstLedger: 1000, lastLedger: 18280, ratePerHour: 0.2 }], declaredButUnseen: [] } };
   const md = renderMonitoringPlan(comJanela);
   const r = validateMonitoringPlan(comJanela, md, comJanela.monitors ?? []);
-  assert.ok(r.blockers.length, "contrato de referência não produziu blocker de baseline");
+  assert.ok(pendencias(r).length, "contrato de referência não produziu pendência de baseline");
+  // (c) é preenchimento, não falha da ferramenta: nenhuma janela produziria esse baseline.
   assert.ok(
-    r.blockers.some((b) => /not event-based; its baseline is the current on-chain value/.test(b)),
-    `caso (c) não saiu com o texto de preenchimento: ${r.blockers.join(" | ")}`,
+    (r.needsInput ?? []).some((b) => /not event-based; its baseline is the current on-chain value/.test(b)),
+    `caso (c) não saiu como preenchimento: ${pendencias(r).join(" | ")}`,
   );
   assert.ok(
-    !r.blockers.some((b) => /No observation window/.test(b)),
+    !pendencias(r).some((b) => /No observation window/.test(b)),
     "o validador afirmou que não há janela num documento que imprime a janela",
   );
   // e a contradição não sobrevive no corpo do documento
@@ -366,9 +381,9 @@ test("as três causas de ausência de baseline não compartilham texto", async (
   const b = validateMonitoringPlan(curta, renderMonitoringPlan(curta), curta.monitors ?? [])
     .blockers.find((x) => /declared insufficient/.test(x))!;
   const fill = await ctxAlvo();
-  const c = validateMonitoringPlan(fill, renderMonitoringPlan(fill), fill.monitors ?? [])
-    .blockers.find((x) => /not event-based/.test(x))!;
-  assert.ok(a && b && c, "uma das três causas não produziu blocker");
+  const c = (validateMonitoringPlan(fill, renderMonitoringPlan(fill), fill.monitors ?? []).needsInput ?? [])
+    .find((x) => /not event-based/.test(x))!;
+  assert.ok(a && b && c, "uma das três causas não produziu pendência");
   assert.equal(new Set([a, b, c]).size, 3, "duas causas diferentes saíram com o mesmo texto");
 });
 
@@ -487,7 +502,7 @@ test("monitor nem executável por getEvents nem completamente especificado rebai
   const citados = mons.filter((m) => sinal.detail.includes(m.id));
   assert.ok(citados.length, "a linha não nomeia nenhum monitor incompleto");
   assert.ok(
-    citados.some((m) => r.blockers.some((b) => b.includes(m.id))),
+    citados.some((m) => pendencias(r).some((b) => b.includes(m.id))),
     "a linha aponta um monitor incompleto que o documento não lista como bloqueio",
   );
 
@@ -552,5 +567,102 @@ test("--lang pt: precisão sem monitor ativo e zero observado saem em português
     assert.match(sinal.detail, /não (é executável|são executáveis) por getEvents nem completamente especificados?/);
   } finally {
     setLang("en");
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * Veredito de três estados
+ * ------------------------------------------------------------------ */
+
+test("veredito separa falha da ferramenta de preenchimento da equipe", async () => {
+  const ctx = await ctxAlvo();
+  const tm = renderThreatModel(ctx);
+  const r = validateThreatModel(ctx, tm);
+
+  // O documento gerado não tem blocker da ferramenta: o que sobra é preenchimento.
+  assert.deepEqual(r.blockers, [], `a ferramenta deixou pendência própria: ${r.blockers.join(" | ")}`);
+  assert.equal(r.verdict, "needs-input");
+  assert.equal(r.submittable, false);
+  assert.equal(r.submittable, r.verdict === "submittable", "submittable e verdict discordam");
+  // a §1 do template é preenchimento em todo documento gerado: o bytecode não tem propósito de negócio
+  assert.ok(
+    (r.needsInput ?? []).some((b) => /Write section 1/.test(b)),
+    `a lacuna da §1 não entrou em needsInput: ${(r.needsInput ?? []).join(" | ")}`,
+  );
+  // e o documento imprime o veredito e a lista, com o título que o time procura
+  assert.match(tm, /\*\*NEEDS INPUT\.\*\*/);
+  assert.match(tm, /### Input the team must provide before submitting/);
+  for (const b of r.needsInput ?? []) assert.ok(tm.includes(b), `pendência ausente do documento: ${b}`);
+
+  // afirmação que a análise não sustenta é falha da FERRAMENTA: volta a not-submittable
+  const inflado = tm.replace(/\*\*\[C\]\*\*/g, "**[A]**");
+  const ri = validateThreatModel(ctx, inflado);
+  assert.equal(ri.verdict, "not-submittable");
+  assert.ok(ri.blockers.length, "tier inflado não produziu blocker da ferramenta");
+});
+
+test("com as seis letras e a §1 escritas, não sobra preenchimento", async () => {
+  const ctx = await ctxAlvo();
+  const tm = renderThreatModel(ctx);
+  const modelo = ctx.findings[0];
+  const findings = (["Spoof", "Tamper", "Repudiate", "Info", "DoS", "Elevation"] as const).map((stride, i) => ({
+    ...modelo,
+    id: `${stride}.${i + 1}`,
+    stride,
+  }));
+  const comTodas = { ...ctx, findings, gaps: [] };
+  // a equipe escreveu a §1 (o aviso de lacuna sai do documento) e as seis letras têm issue
+  const texto = `${tm.replace(/\*\*Gap to be filled by the team\.\*\*/g, "**About this protocol.**")}\n${findings
+    .map((f) => `**${f.id}** — ${f.title} (${f.stride}) [A] [C]`)
+    .join("\n")}\n`;
+  const r = validateThreatModel(comTodas as typeof ctx, texto);
+  assert.deepEqual(r.needsInput, [], `sobrou preenchimento: ${(r.needsInput ?? []).join(" | ")}`);
+  assert.equal(r.verdict, r.blockers.length ? "not-submittable" : "submittable");
+  assert.equal(r.submittable, r.blockers.length === 0);
+});
+
+/* ------------------------------------------------------------------ *
+ * Agregação por família no detalhamento
+ * ------------------------------------------------------------------ */
+
+/** AMM de mainnet com 5 achados `initialization-front-running` da mesma forma. */
+const AMM = "CBBMQBNHB2FYVZYV7VNHOJHUMTFJLR4PUMRVQYNW6RHIKZO2NQMIBUCV.wasm";
+
+test("cinco achados de init da mesma família saem num bloco só, sem perder id nenhum", async () => {
+  const ctx = await buildContext({ target: CORPUS + AMM, network: "mainnet", generatedAt: DATA, offline: true });
+  const init = ctx.findings.filter((f) => f.class === "initialization-front-running");
+  assert.equal(init.length, 5, `o corpus mudou: esperados 5 achados de init, vieram ${init.length}`);
+  assert.ok(init.every((f) => f.family === "init"), "achado de init sem família");
+
+  const tm = renderThreatModel(ctx);
+
+  // um único bloco de detalhamento para os cinco
+  const titulos = tm.match(/^#### Elevation\.\d+.*$/gm) ?? [];
+  assert.equal(titulos.length, 1, `esperado um bloco agregado, vieram ${titulos.length}: ${titulos.join(" | ")}`);
+  assert.match(titulos[0], /^#### Elevation\.1 – Elevation\.5 — `initialization-front-running` in 5 entrypoints$/);
+
+  // com cinco linhas, uma por entrypoint, cada uma carregando o próprio id e os níveis
+  const bloco = tm.slice(tm.indexOf(titulos[0]));
+  for (const f of init) {
+    const re = new RegExp(`^\\\\| \\\\*\\\\*${f.id}\\\\*\\\\* \\\\| \`${f.entrypoint}\` \\\\| \\\\[A\\\\]\\\\+\\\\[C\\\\] \\\\| ${f.severity} \\\\|`, "m");
+    assert.match(bloco, re, `linha da tabela agregada ausente para ${f.id}`);
+  }
+  assert.match(bloco, /\*\*Per-ID anchors:\*\*/);
+
+  // e o validador continua achando cada id, com evidência marcada — nada de âncora perdida
+  const r = validateThreatModel(ctx, tm);
+  for (const f of init) {
+    assert.ok(!r.blockers.some((b) => b.includes(`${f.id} exists in the analysis`)), `${f.id} sumiu do documento`);
+    assert.ok(
+      !r.blockers.some((b) => b.includes(`Threat ${f.id} appears in the document with no evidence tier`)),
+      `${f.id} ficou sem marca de nível na âncora`,
+    );
+  }
+  assert.deepEqual(r.blockers, [], `agregação criou blocker: ${r.blockers.join(" | ")}`);
+
+  // agregar é de apresentação: a tabela de ameaças e as remediações mantêm os cinco ids
+  for (const f of init) {
+    assert.ok(tm.includes(`**${f.id}** — `), `${f.id} sumiu da tabela de ameaças`);
+    assert.ok(tm.includes(`${f.id}.R.1`), `${f.id} sumiu das remediações`);
   }
 });

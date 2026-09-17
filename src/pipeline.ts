@@ -3,11 +3,12 @@ import { basename } from "node:path";
 import { createHash } from "node:crypto";
 import { analyzeModule } from "./analyze.ts";
 import { detectFull, lacunas } from "./detect.ts";
-import { fetchWasm, modelFromEntries, parseSpecEntries } from "./spec.ts";
+import { fetchWasm, modelFromEntries, parseSpecEntries, endpointDe, redactUrl, rotuloDaRede } from "./spec.ts";
 import { inferStorageKeys } from "./storagekeys.ts";
 import { buildDfd } from "./render/dfd.ts";
 import { deriveMonitors } from "./monitors.ts";
 import { observe } from "./events.ts";
+import { probeInitFindings, resumoDeProbes, sondaveis } from "./probe.ts";
 import { setLang, msgs } from "./i18n.ts";
 import type { Lang } from "./i18n.ts";
 import type { ArtifactContext } from "./artifact.ts";
@@ -19,18 +20,26 @@ const M = msgs({
   en: {
     naoDerivavel: "⟨not derivable from the file⟩",
     observando: (rede: string) => `observing on-chain events on ${rede}, ~15 s…`,
-    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number) =>
-      `observed window: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insufficient for a baseline" : ""}, ${topics} distinct topics`,
+    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number, paginas: number, limite: string) =>
+      `observed window: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insufficient for a baseline" : ""}, ${topics} distinct topics, ${paginas} getEvents ${paginas === 1 ? "page" : "pages"}, limited by ${limite}`,
     falhou: (erro: string) => `on-chain observation failed: ${erro}`,
     timeout: (s: number) => `timed out after ${s} s`,
+    sondando: (n: number) => `probing ${n} init ${n === 1 ? "finding" : "findings"} with unsigned simulateTransaction…`,
+    sondado: (g: number, o: number, i: number) => `probe: ${g} guarded · ${o} open · ${i} inconclusive`,
+    baselineProbe: (k: string, d: string, l: number | undefined) =>
+      `init probe (B, unsigned simulateTransaction${l ? `, ledger ${l}` : ""}): ${k} — ${d}`,
   },
   pt: {
     naoDerivavel: "⟨não derivável do arquivo⟩",
     observando: (rede: string) => `observando eventos on-chain em ${rede}, ~15 s…`,
-    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number) =>
-      `janela observada: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insuficiente para baseline" : ""}, ${topics} topics distintos`,
+    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number, paginas: number, limite: string) =>
+      `janela observada: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insuficiente para baseline" : ""}, ${topics} topics distintos, ${paginas} ${paginas === 1 ? "página" : "páginas"} de getEvents, limitada por ${limite}`,
     falhou: (erro: string) => `observação on-chain falhou: ${erro}`,
     timeout: (s: number) => `timeout após ${s} s`,
+    sondando: (n: number) => `sondando ${n} ${n === 1 ? "achado" : "achados"} de init com simulateTransaction não assinada…`,
+    sondado: (g: number, o: number, i: number) => `sondagem: ${g} guarded · ${o} open · ${i} inconclusive`,
+    baselineProbe: (k: string, d: string, l: number | undefined) =>
+      `sondagem de init (B, simulateTransaction não assinada${l ? `, ledger ${l}` : ""}): ${k} — ${d}`,
   },
 });
 
@@ -67,7 +76,7 @@ export type ResolvedTarget = {
  * StrKey de contrato — é como o corpus é nomeado. Caso contrário o endereço sai marcado
  * como não derivável em vez de receber o caminho do arquivo (AQ-6).
  */
-export async function resolveTarget(target: string, network: string): Promise<ResolvedTarget> {
+export async function resolveTarget(target: string, endpoint: string): Promise<ResolvedTarget> {
   if (isLocalTarget(target)) {
     const wasm = new Uint8Array(readFileSync(target));
     const base = basename(target).replace(/\.wasm$/i, "");
@@ -81,7 +90,7 @@ export async function resolveTarget(target: string, network: string): Promise<Re
       analyzedFile: target,
     };
   }
-  const { wasm, wasmHash } = await fetchWasm(target, network);
+  const { wasm, wasmHash } = await fetchWasm(target, endpoint);
   return { wasm, wasmHash, contractId: target };
 }
 
@@ -106,7 +115,17 @@ function comPrazo<T>(p: Promise<T>, ms: number): Promise<T> {
  */
 export async function buildContext(opts: {
   target: string;
+  /**
+   * Rede: nome conhecido (`mainnet`/`testnet`) ou URL de RPC. Quando é URL, o RÓTULO que vai
+   * para `ctx.network` é derivado da passphrase que o nó devolve — a URL nunca é o rótulo,
+   * porque um RPC pago carrega a API key no path e o rótulo é renderizado nos documentos.
+   */
   network: string;
+  /**
+   * Endpoint de RPC já resolvido, quando o chamador (o CLI) também já resolveu o rótulo.
+   * Fica em variável local: não entra no `ArtifactContext` e não é renderizado em lugar nenhum.
+   */
+  rpcUrl?: string;
   generatedAt: string;
   /** pular a ida à rede para observar eventos (nível B) */
   offline?: boolean;
@@ -114,6 +133,11 @@ export async function buildContext(opts: {
   lang?: Lang;
   /** prazo total da fase de observação, em ms (0 = sem prazo) */
   timeoutMs?: number;
+  /**
+   * Sondar os achados de init com `simulateTransaction` não assinada (nível B). Default
+   * `true` quando online. `--no-probe` desliga.
+   */
+  probe?: boolean;
   /** progresso legível para stderr — o CLI liga isto; testes não */
   onProgress?: (msg: string) => void;
 }): Promise<ArtifactContext> {
@@ -121,20 +145,28 @@ export async function buildContext(opts: {
   // abaixo, então `setLang` precisa acontecer ANTES da análise — não na hora de renderizar.
   setLang(opts.lang ?? "en");
 
-  const alvo = await resolveTarget(opts.target, opts.network);
+  // Separação de credencial: `rpcUrl` é por onde falamos com a rede; `rede` é o rótulo que os
+  // documentos, o DFD e o sumário do CLI mostram. Uma URL de RPC pode ser um segredo; um
+  // rótulo nunca é. Quando o `-n` foi uma URL, o rótulo vem de UMA chamada `getNetwork`;
+  // se ela falhar, o rótulo é `custom` — e não a URL.
+  const rpcUrl = opts.rpcUrl ?? endpointDe(opts.network);
+  const rede = /:\/\//.test(opts.network) ? await rotuloDaRede(rpcUrl) : opts.network;
+
+  const alvo = await resolveTarget(opts.target, rpcUrl);
   const wasm = alvo.wasm;
 
   const analysis = analyzeModule(wasm);
   const { findings } = detectFull(analysis, wasm);
-  const specParts = modelFromEntries(parseSpecEntries(wasm));
+  const specEntries = parseSpecEntries(wasm);
+  const specParts = modelFromEntries(specEntries);
 
   const ctx: ArtifactContext = {
     contractId: alvo.contractId,
-    network: opts.network,
+    network: rede,
     generatedAt: opts.generatedAt,
     lang: opts.lang,
     spec: {
-      contractId: alvo.contractId, network: opts.network,
+      contractId: alvo.contractId, network: rede,
       // Sem isto o hash que `resolveTarget` acabou de ler on-chain ficava no caminho e o
       // documento saía dizendo "hash do WASM não capturado na geração" sobre um alvo por
       // contract id — o campo que prende o plano ao binário que está no ar.
@@ -157,21 +189,62 @@ export async function buildContext(opts: {
   if (opts.offline || alvo.analyzedFile) {
     ctx.offline = true;
   } else {
-    opts.onProgress?.(M.observando(opts.network));
+    opts.onProgress?.(M.observando(rede));
     try {
-      ctx.observations = await comPrazo(observe(opts.target, opts.network), opts.timeoutMs ?? 0);
-      const w = ctx.observations.window;
+      const obs = await comPrazo(observe(opts.target, rpcUrl), opts.timeoutMs ?? 0);
+      ctx.observations = obs;
+      // `limitedBy`/`pagesUsed` não cabem em `Observations` (congelado em artifact.ts) e
+      // viajam no modelo, que já chega inteiro a todos os renderizadores.
+      ctx.spec.windowLimitedBy = obs.limitedBy;
+      ctx.spec.windowPagesUsed = obs.pagesUsed;
+      const w = obs.window;
       opts.onProgress?.(
-        M.janela(w.ledgers, w.approxHours, w.fromLedger, w.toLedger, Boolean(w.insufficient), ctx.observations.events.length),
+        M.janela(w.ledgers, w.approxHours, w.fromLedger, w.toLedger, Boolean(w.insufficient), obs.events.length, obs.pagesUsed, obs.limitedBy),
       );
     } catch (e) {
       // Engolir a falha faria o documento sair byte a byte igual ao de `--offline` e
       // afirmar que nenhuma janela foi coletada — falso sobre a tentativa.
-      ctx.observationError = String((e as Error)?.message ?? e);
+      // O erro do RPC costuma embutir a URL chamada, e ele vai para dentro dos documentos.
+      ctx.observationError = redactUrl(String((e as Error)?.message ?? e));
       opts.onProgress?.(M.falhou(ctx.observationError));
     }
   }
 
+  // Sondagem de init (nível B) antes dos monitores: o baseline do monitor de init cita o
+  // resultado, e um monitor derivado antes da sondagem citaria uma janela que a sondagem
+  // acabou de fechar. Só acontece online, com alvo por contract id.
+  if (!ctx.offline && !alvo.analyzedFile && opts.probe !== false && CONTRACT_ID_RE.test(alvo.contractId)) {
+    const alvos = sondaveis(findings);
+    if (alvos.length) {
+      opts.onProgress?.(M.sondando(alvos.length));
+      const probes = await probeInitFindings({
+        contractId: alvo.contractId,
+        findings,
+        specEntries,
+        errors: ctx.spec.errors,
+        endpoint: rpcUrl,
+        rede,
+        deadline: opts.timeoutMs ? Date.now() + opts.timeoutMs : undefined,
+      });
+      if (probes.size) {
+        ctx.spec.probes = Object.fromEntries(probes);
+        const r = resumoDeProbes(probes.values());
+        opts.onProgress?.(M.sondado(r.guarded, r.open, r.inconclusive));
+      }
+    }
+  }
+
   ctx.monitors = deriveMonitors(ctx);
+  // O baseline do monitor de init passa a citar a sondagem. É acréscimo de TEXTO: o
+  // `baselineTier` continua vindo da janela de eventos, porque a sondagem responde "a
+  // janela de front-running está aberta?", não "qual é a taxa deste evento?".
+  if (ctx.spec.probes && ctx.monitors?.length) {
+    const porAchado = ctx.spec.probes;
+    for (const m of ctx.monitors) {
+      const p = porAchado[m.threatId];
+      if (!p) continue;
+      m.baseline = `${M.baselineProbe(p.kind, p.detail, p.ledger)} ${m.baseline}`;
+    }
+  }
   return ctx;
 }

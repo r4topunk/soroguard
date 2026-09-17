@@ -14,7 +14,9 @@ npx soroguard artifact CDZZ5HUOBL2QGELMWQMWNIPMA4TWYMX3KWMA6PWQL3OUTBDXUOL742T5 
 
 ```
   … observing on-chain events on mainnet, ~15 s…
-  … observed window: 120662 ledgers (~185.8 h), 0 distinct topics
+  … observed window: 239977 ledgers (~375 h), 4 distinct topics, 24 getEvents pages, limited by request-budget
+  … probing 1 init finding with unsigned simulateTransaction…
+  … probe: 0 guarded · 0 open · 1 inconclusive
 
   out/CDZZ5HUOBL2QGELMWQMW-threat-model.md
   out/CDZZ5HUOBL2QGELMWQMW-monitoring-plan.md
@@ -22,26 +24,26 @@ npx soroguard artifact CDZZ5HUOBL2QGELMWQMWNIPMA4TWYMX3KWMA6PWQL3OUTBDXUOL742T5 
   1 threat · 1 monitor · 5 STRIDE gaps declared
   analysis sound
 
-  VALIDATION — threat model: NOT submittable
-    ✖ STRIDE letter Spoof has no issue — the template requires at least one; fill it from
+  VALIDATION — threat model: NEEDS INPUT — 6 items for the team (see worksheets)
+    needs the team:
+    ☐ Write section 1, "What are we working on?": …
+    ☐ STRIDE letter Spoof has no issue — the template requires at least one; fill it from
       the worksheet in the Spoof gap section (it lists the concrete surface to review).
-    ✖ … (Tamper, Repudiate, Info, DoS)
-  VALIDATION — monitoring plan: NOT submittable
-    ✖ The observed window of 120662 ledgers recorded no event of any topic for this
-      contract: that is absence of traffic, not a traffic profile. …
-    ✖ Assign an owner and a notification channel to 1 row of §5; neither is derivable
+    ☐ … (Tamper, Repudiate, Info, DoS)
+  VALIDATION — monitoring plan: NEEDS INPUT — 1 item for the team (see worksheets)
+    ☐ Assign an owner and a notification channel to 1 row of §5; neither is derivable
       from the binary, and a monitor with no owner has no one to fire at.
 ```
 
-(Abbreviated; the window figures move between runs.) Both verdicts are the feature, not an
-error: the tool validates its own output against the template's "Did we do a good job?"
-checklist and refuses to call a document submittable when the evidence is not there. The
-template requires at least one issue per STRIDE letter, and the bytecode supports only one
-letter for this contract, so the threat model ships with a worksheet per empty letter (the
-concrete surface the team has to review: which entrypoints assert identity, which storage keys
-and topics are public, which TTL paths renew) instead of boilerplate. The monitoring plan needs
-an owner, a channel and a contract that actually emits events. What the tool delivers is the
-half of both documents that can be derived and checked, with the other half named.
+(Abbreviated; the window figures move between runs.) The verdict has three states. **SUBMITTABLE** means
+both checklists pass. **NEEDS INPUT** means the tool did its part and lists, numbered, what only the
+team can write: the template requires at least one issue per STRIDE letter, and the bytecode supports
+one letter for this contract, so each empty letter comes with a worksheet (which entrypoints assert
+identity, which storage keys and topics are public, which TTL paths renew) instead of boilerplate.
+**NOT SUBMITTABLE** is reserved for the tool's own failures: a claim it cannot back, an orphan
+monitor, a baseline that would be invented. Init findings are probed with an unsigned
+`simulateTransaction`: an already-initialized revert closes the finding by observation; a successful
+simulation means anyone can initialize the instance right now and is surfaced as such.
 
 ## Why the deployed binary, not the source
 
@@ -254,16 +256,16 @@ project enters this repository — see `SECURITY.md`.
 
 | Measurement | Value |
 |---|---|
-| Tests (`pnpm test`) | **161 passing** of 161 |
+| Tests (`pnpm test`) | **215 passing** of 215 |
 | Corpus (`corpus/*.wasm`) | **71 mainnet contracts**, 1,726 entrypoints, 0 parse failures |
-| Findings | **145** total · **2.0 per contract** |
-| By class | 48 `silent-mutation` · 35 `initialization-front-running` · 32 `vulnerable-sdk` · 17 `unauthenticated-state-mutation` · 9 `archival-risk` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
+| Findings | **164** total · **2.3 per contract** |
+| By class | 48 `silent-mutation` · 38 `vulnerable-sdk` · 35 `initialization-front-running` · 13 `self-implemented-signature-verification` · 10 `unauthenticated-state-mutation` · 9 `archival-risk` · 7 `third-party-state-tampering` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
 | `call_indirect` (analysis downgraded) | **22 of 71** (31%) |
 | Declared suppressions | **111**<br>52 — read-shaped name: the write probably comes from a shared helper, not from this path<br>46 — reserved `__` function, not directly invocable (CAP-0058)<br>13 — permissionless crank by design (protocol maintenance pattern) |
-| Downgrades (reported, not suppressed) | **9**<br>9 — reaches call/try_call — authorization may live in the callee, severity capped at High |
-| SDK version declared (`rssdkver`) | **38 of 71** |
-| In a CVE-2026-26267 affected range (High) | **31 of 38** that declare a version |
-| Source lines (`src` + `test`) | 13,164 in 29 files |
+| Downgrades (reported, not suppressed) | **4**<br>4 — reaches call/try_call — authorization may live in the callee, severity capped at High |
+| SDK version declared (`rssdkver`) | **69 of 71** |
+| In a CVE-2026-26267 affected range (High) | **37 of 69** that declare a version |
+| Source lines (`src` + `test`) | 16,092 in 31 files |
 <!-- stats:end -->
 
 ## What it does not do
@@ -329,6 +331,7 @@ Not measured, by anyone: recall.
 | `docs/CVE-2026-26267-VERIFICACAO.md` | the source check of the 34 exposed contracts |
 | `SECURITY.md` | disclosure policy for findings about third-party contracts |
 | `docs/PRECISION.md` | the 30-finding triage against source, summarised |
+| `docs/PRECISION-TOP25.md` | every finding on the 25 most-invoked mainnet code hashes, triaged against source: 0 of 7 auth findings real, 0 of 66 loss of funds, 0 false tier-A claims, and what the tool missed |
 | `corpus/README.md` | corpus provenance, verification and regeneration |
 | `corpus/census/` | the whole-mainnet census: aggregates over every distinct deployed binary (`SUMMARY.md`, `summary.json`) |
 | `CONTRIBUTING.md` | how to change a detector without regressing precision |

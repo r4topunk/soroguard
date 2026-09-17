@@ -328,7 +328,10 @@ test("a lacuna de Spoofing separa entrypoint administrativo de operação do pr�
     const usuarios = autenticam.filter((e) => !admin.test(e.name)).map((e) => e.name);
     if (usuarios.length) {
       assert.ok(tm.includes("the caller authorizing"), `${f}: não diz que o user-shaped autoriza o próprio endereço`);
-      assert.ok(tm.includes("User-shaped"), `${f}: os entrypoints de usuário não foram separados`);
+      // A separação tem que NOMEAR os dois mecanismos que a fronteira "require_auth* alcançável"
+      // junta: controle de acesso (admin) e autoautorização (o chamador autorizando a si mesmo).
+      assert.ok(tm.includes("**Self-authorization ("), `${f}: os entrypoints de usuário não saíram como autoautorização`);
+      assert.ok(/\*\*Access control[ (:]/.test(tm), `${f}: os entrypoints administrativos não saíram como controle de acesso`);
       // e a frase antiga, que mandava rastrear TODOS até um detentor de chave, não pode sobrar
       assert.ok(
         !/reach `require_auth\*` \([^)]*\) — those are the calls whose `Address`/.test(tm),
@@ -385,8 +388,13 @@ test("a lacuna de DoS hedgia a positiva de TTL em vez de listar getters", async 
 });
 
 test("a lacuna de Spoof/Info cita a superfície deste contrato, não só o texto estrutural", async () => {
-  const docs = await Promise.all(amostra.slice(0, 3).map((f) => gerar(f)));
-  const trechos = docs.map(({ tm }) => {
+  const docs = await Promise.all(amostra.slice(0, 4).map((f) => gerar(f)));
+  // Desde `self-implemented-signature-verification`, um contrato do corpus pode ter ACHADO
+  // de Spoof — e aí não há lacuna de Spoof para conferir. O teste é sobre a lacuna: filtra
+  // quem a declara e exige que continue havendo mais de uma, com texto distinto entre elas.
+  const comLacunaSpoof = docs.filter(({ ctx }) => !ctx.findings.some((f) => f.stride === "Spoof"));
+  assert.ok(comLacunaSpoof.length >= 2, `amostra sem lacunas de Spoof suficientes: ${comLacunaSpoof.length}`);
+  const trechos = comLacunaSpoof.map(({ tm }) => {
     const s = /\*\*Where identity is asserted in this contract:\*\*(.*)/.exec(tm);
     assert.ok(s, "lacuna de Spoof sem linha específica do contrato");
     return s![1];
@@ -457,4 +465,81 @@ test("--lang pt acompanha as frases reescritas", async (t) => {
   assert.ok(tmB.includes("Nota de nível B/C."), "nota de inicialização não traduzida");
   assert.ok(tmB.includes("janela de ~186 h"), "ressalva de janela não traduzida");
   assert.ok(tmB.includes("nenhum monitor do plano irmão"), "frase de nível B sem âncora não traduzida");
+});
+
+/* ------------------------------------------------------------------ *
+ * Vazamento de credencial: a URL do RPC não é o rótulo da rede.
+ *
+ * Um RPC pago tem a forma `https://<provedor>/v2/<API_KEY>`. Essa string era carimbada como
+ * "rede" no cabeçalho dos dois documentos, na tabela de inventário e no comentário do
+ * mermaid — 50 documentos saíram carregando uma chave. O rótulo agora vem da passphrase que
+ * o próprio nó devolve (`getNetwork`), e o endpoint não entra no `ArtifactContext`.
+ * ------------------------------------------------------------------ */
+
+const RPC_FALSO = "https://rpc.example.invalid/v2/SECRETKEY";
+const SEGREDOS = ["SECRETKEY", "example.invalid", RPC_FALSO];
+
+/** Nó que responde `getNetwork` com a passphrase de mainnet — sem ir à rede de verdade. */
+function stubPassphrase(passphrase: string | undefined) {
+  const original = globalThis.fetch;
+  const chamadas: string[] = [];
+  globalThis.fetch = (async (input: any) => {
+    chamadas.push(String(input));
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { passphrase } }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return { chamadas, restore: () => { globalThis.fetch = original; } };
+}
+
+test("URL de RPC com API key nunca chega aos documentos: o rótulo vem da passphrase", async (t) => {
+  const stub = stubPassphrase("Public Global Stellar Network ; September 2015");
+  t.after(stub.restore);
+
+  const ctx = await buildContext({
+    target: CORPUS + amostra[0], network: RPC_FALSO, generatedAt: DATA, offline: true,
+  });
+
+  // O rótulo é derivado, não copiado — e o endpoint foi consultado exatamente uma vez.
+  assert.equal(ctx.network, "mainnet");
+  assert.equal(ctx.spec.network, "mainnet");
+  assert.deepEqual(stub.chamadas, [RPC_FALSO]);
+  assert.ok(!("rpcUrl" in ctx), "o endpoint não pode entrar no ArtifactContext");
+
+  const tm = renderThreatModel(ctx);
+  const mp = renderMonitoringPlan(ctx);
+  for (const doc of [tm, mp, JSON.stringify(ctx)]) {
+    for (const s of SEGREDOS) assert.ok(!doc.includes(s), `"${s}" vazou na saída gerada`);
+  }
+  // O comentário do mermaid é o ponto exato em que a URL era carimbada dentro do TM.
+  assert.match(tm, /%% contract .* · network mainnet · generated at/);
+  assert.match(mp, /\bmainnet\b/);
+});
+
+test("passphrase desconhecida ou nó que não responde viram `custom`, nunca a URL", async (t) => {
+  const desconhecida = stubPassphrase("Some Private Chain ; 2030");
+  t.after(desconhecida.restore);
+  const a = await buildContext({ target: CORPUS + amostra[0], network: RPC_FALSO, generatedAt: DATA, offline: true });
+  assert.equal(a.network, "custom");
+  desconhecida.restore();
+
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => { throw new Error(`fetch failed for ${RPC_FALSO}`); }) as typeof fetch;
+  t.after(() => { globalThis.fetch = original; });
+  const b = await buildContext({ target: CORPUS + amostra[0], network: RPC_FALSO, generatedAt: DATA, offline: true });
+  assert.equal(b.network, "custom", "falha de rede não pode degradar para a URL");
+
+  for (const ctx of [a, b]) {
+    for (const doc of [renderThreatModel(ctx), renderMonitoringPlan(ctx)]) {
+      for (const s of SEGREDOS) assert.ok(!doc.includes(s), `"${s}" vazou`);
+    }
+  }
+});
+
+test("nome de rede conhecido não gasta ida à rede — o rótulo já é o rótulo", async (t) => {
+  const stub = stubPassphrase("Public Global Stellar Network ; September 2015");
+  t.after(stub.restore);
+  const ctx = await buildContext({ target: CORPUS + amostra[0], network: "testnet", generatedAt: DATA, offline: true });
+  assert.equal(ctx.network, "testnet");
+  assert.deepEqual(stub.chamadas, [], "nome conhecido não precisa perguntar a passphrase");
 });

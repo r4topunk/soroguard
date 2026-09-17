@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { analyzeModule, requiresAuth, writesStorage } from "../src/analyze.ts";
-import { detect, detectFull } from "../src/detect.ts";
-import { hostFn, AUTH_FNS, STORAGE_WRITE_FNS } from "../src/hostfns.ts";
+import { analyzeModule, requiresAuth, writesStorage, canUpgradeSelf } from "../src/analyze.ts";
+import { detect, detectFull, lacunas, lerSpec } from "../src/detect.ts";
+import { hostFn, AUTH_FNS, STORAGE_WRITE_FNS, SIG_SCHEME_FNS } from "../src/hostfns.ts";
 import { setLang } from "../src/i18n.ts";
 
 const CORPUS = new URL("../corpus/", import.meta.url).pathname;
@@ -43,7 +43,9 @@ test("achado de autorização implica ausência real de require_auth no alcance"
   for (const f of files) {
     const an = analyzeModule(load(f));
     for (const fd of detect(an)) {
-      if (!/unauthenticated-state-mutation|initialization-front-running/.test(fd.class)) continue;
+      // `third-party-state-tampering` é o mesmo fato de bytecode com outra letra: um
+      // escritor sem auth. O invariante vale igual e não pode escapar por mudança de classe.
+      if (!/unauthenticated-state-mutation|initialization-front-running|third-party-state-tampering/.test(fd.class)) continue;
       const ep = an.entrypoints.find((e) => e.name === fd.entrypoint)!;
       assert.equal(requiresAuth(ep), false, `${f}:${fd.entrypoint} alcança auth mas foi reportado`);
       assert.equal(writesStorage(ep), true, `${f}:${fd.entrypoint} não alcança escrita mas foi reportado`);
@@ -258,8 +260,16 @@ test("`gauges_get_reward_info` é suprimido como read-shaped, e escritor com ver
     !r.findings.some((x) => x.entrypoint === "gauges_get_reward_info"),
     "gauges_get_reward_info suprimido e reportado ao mesmo tempo",
   );
-  // ground truth de docs/triagem-unauth: nenhum TP humano pode ser suprimido pela nova regra
+  // Ground truth de docs/triagem-unauth: nenhum TP humano pode ser suprimido pela nova regra.
+  // A CLASSE de um TP pode mudar — `third-party-state-tampering` re-letra parte do que saía
+  // como `unauthenticated-state-mutation` (Elevation → Tamper) sem mexer no fato de bytecode.
+  // O que o ground truth prende é que o entrypoint continue REPORTADO, não sob qual classe.
   const TP = new Set(["init", "submit", "update_b_rate", "add_yield", "delete_note", "update_signer", "initialize", "initialize_escrow"]);
+  const CLASSES_TP = new Set([
+    "unauthenticated-state-mutation",
+    "third-party-state-tampering",
+    "initialization-front-running",
+  ]);
   for (const g of files) {
     const w = load(g);
     for (const s of detectFull(analyzeModule(w), w).suppressed) {
@@ -268,6 +278,17 @@ test("`gauges_get_reward_info` é suprimido como read-shaped, e escritor com ver
   }
   // Não basta não suprimir: os dois TPs de init da triagem têm que CONTINUAR reportados,
   // e agora como front-running (a classe certa), não como escritor genérico sem auth.
+  // e todo TP que aparece no corpus continua reportado sob uma das classes aceitas
+  let tpVistos = 0;
+  for (const g of files) {
+    const w = load(g);
+    for (const fd of detectFull(analyzeModule(w), w).findings) {
+      if (!TP.has(fd.entrypoint)) continue;
+      tpVistos++;
+      assert.ok(CLASSES_TP.has(fd.class), `${g}: ${fd.entrypoint} saiu como ${fd.class}, fora das classes aceitas`);
+    }
+  }
+  assert.ok(tpVistos > 0, "nenhum TP do ground truth apareceu no corpus");
   for (const [g, ep] of [[CTOR_MAIS_INIT, "initialize"], [ESCROW, "initialize_escrow"]] as const) {
     const w = load(g);
     const fd = detectFull(analyzeModule(w), w).findings.find((x) => x.entrypoint === ep);
@@ -548,4 +569,330 @@ test("com setLang(\"pt\") os mesmos achados saem em português, e o dado não mu
   } finally {
     setLang("en");
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * `contractmetav0` repetida: o `rssdkver` estava sendo perdido.
+ *
+ * O formato WASM permite repetir o nome de uma custom section, e a toolchain grava uma
+ * SEGUNDA `contractmetav0` (com `cliver`) depois da que o `soroban-sdk` grava (com
+ * `rssdkver`). `parseModule` guarda as custom sections num `Map` por nome e ficava só com a
+ * última; `readSdkMeta` decodificava essa única seção com `xdr.decodeStream` dentro de um
+ * `try/catch` que engolia o erro e devolvia o mapa parcial. Resultado medido sobre os 25
+ * code hashes mais invocados da mainnet: os 25 declaram `rssdkver`, a ferramenta lia 14 e
+ * dizia "ausente" em 11 — perdendo 6 achados `vulnerable-sdk`, um deles no pool de
+ * empréstimo mais movimentado.
+ *
+ * As duas seções abaixo são os bytes REAIS de um desses binários (rank 25 do censo). São só
+ * strings de metadado de build — `rsver`, `rssdkver`, `cliver` — sem contract id nem
+ * qualquer identificador do projeto.
+ * ------------------------------------------------------------------ */
+
+/** `contractmetav0` #1: rsver + rssdkver = 21.7.7 (faixa do CVE-2026-26267). */
+const META_RSSDKVER =
+  "0000000000000005727376657200000000000006312e38382e300000000000000000000872" +
+  "7373646b7665720000002f32312e372e37233564613738396335306231386134633262653533333934313338323132666564353666306466633400";
+/** `contractmetav0` #2: só `cliver` — a seção que sobrescrevia a primeira no Map. */
+const META_CLIVER = "0000000000000006636c6976657200000000000732332e322e302300";
+
+/** WASM mínimo com N custom sections `contractmetav0`, nos bytes dados, na ordem dada. */
+function wasmComMetas(...hexes: string[]): Uint8Array {
+  const leb = (n: number) => { const o: number[] = []; do { let b = n & 0x7f; n >>>= 7; if (n) b |= 0x80; o.push(b); } while (n); return o; };
+  const str = (s: string) => { const b = [...Buffer.from(s)]; return [...leb(b.length), ...b]; };
+  const bytes: number[] = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+  bytes.push(1, ...leb(4), 1, 0x60, 0, 0);
+  for (const h of hexes) {
+    const body = [...str("contractmetav0"), ...Buffer.from(h, "hex")];
+    bytes.push(0, ...leb(body.length), ...body);
+  }
+  return new Uint8Array(bytes);
+}
+
+test("rssdkver é lido mesmo quando uma segunda contractmetav0 vem depois", () => {
+  const sozinha = readSdkMeta(wasmComMetas(META_RSSDKVER));
+  assert.equal(sozinha.version, "21.7.7");
+  assert.equal(sozinha.commit, "5da789c50b18a4c2be53394138212fed56f0dfc4");
+  assert.equal(sozinha.partial, false);
+
+  // O caso que se perdia: a segunda seção existe e não tem `rssdkver`.
+  const duas = readSdkMeta(wasmComMetas(META_RSSDKVER, META_CLIVER));
+  assert.equal(duas.version, "21.7.7", "a segunda contractmetav0 apagava a primeira");
+  assert.equal(duas.raw.cliver, "23.2.0#", "as duas seções precisam ser fundidas, não escolhidas");
+  assert.equal(duas.raw.rsver, "1.88.0");
+  assert.equal(duas.partial, false);
+  assert.equal(duas.present, true);
+
+  // …e o achado de advisory que dependia dela volta a sair.
+  assert.ok(ids(duas.version).includes(CVE), "21.7.7 está na faixa do CVE-2026-26267");
+});
+
+test("readSdkMeta distingue ausente, não-parseável (decode parcial) e avaliada", () => {
+  // (1) nenhuma seção: ausente
+  const semSecao = readSdkMeta(wasmComMetas());
+  assert.equal(semSecao.present, false);
+  assert.equal(semSecao.partial, false);
+  assert.equal(evaluateVersion(semSecao).status, "ausente");
+
+  // (2) seção completa, sem `rssdkver`: ausente de verdade — declarou e não tem
+  const soCliver = readSdkMeta(wasmComMetas(META_CLIVER));
+  assert.equal(soCliver.present, true);
+  assert.equal(soCliver.partial, false);
+  assert.equal(evaluateVersion(soCliver).status, "ausente");
+
+  // (3) seção truncada ANTES do `rssdkver`: não-parseável, não "ausente". Confundir os dois
+  //     é afirmar ausência de exposição a partir de uma falha nossa de parse.
+  const truncada = META_RSSDKVER.slice(0, 2 * 40) + "ffffffff";
+  const parcial = readSdkMeta(wasmComMetas(truncada));
+  assert.equal(parcial.version, undefined);
+  assert.equal(parcial.partial, true, "decode interrompido precisa ficar registrado");
+  assert.equal(typeof parcial.partialAt, "number");
+  const ev = evaluateVersion(parcial);
+  assert.equal(ev.status, "nao-parseavel");
+  assert.match((ev as { raw: string }).raw, /contractmetav0/);
+
+  // (4) versão presente e legível
+  assert.equal(evaluateVersion(readSdkMeta(wasmComMetas(META_RSSDKVER))).status, "avaliada");
+});
+
+test("decode parcial do contractmetav0 vira lacuna declarada, e não silêncio", () => {
+  const w = wasmComMetas(META_RSSDKVER.slice(0, 2 * 40) + "ffffffff");
+  const fs = detectFull(analyzeModule(w), w).findings;
+  const gap = fs.find((x) => x.class === "sdk-version-unparseable");
+  assert.ok(gap, "seção ilegível saiu sem lacuna declarada — é o silêncio que perdeu 6 achados");
+  assert.equal(gap!.severity, "Low");
+  assert.equal(fs.filter((x) => x.class === "vulnerable-sdk").length, 0, "sem versão não há advisory");
+});
+
+/* ---------- silent-mutation: severidade pela CLASSE da ação silenciosa ---------- */
+
+/** Tem `upgrade` entre os entrypoints mudos — o caso que saía Medium pela fração. */
+const SILENT_UPGRADE = "CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV.wasm";
+/** Só entrypoints com nome de init entre os mudos — one-shot, o ramo Low. */
+const SILENT_SO_INIT = "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP.wasm";
+
+test("silent-mutation: severidade vem da classe da ação silenciosa, não da fração", () => {
+  const wasm = load(SILENT_UPGRADE);
+  const an = analyzeModule(wasm);
+  const fd = detectFull(an, wasm).findings.find((x) => x.class === "silent-mutation")!;
+  assert.ok(fd, "o caso perdeu o achado de silent-mutation");
+  const m = fd.title.match(/(\d+) of (\d+)/)!;
+  assert.notEqual(m[1], m[2], "o caso perdeu o pressuposto: a fração é 1 e a regra antiga já daria High");
+  assert.equal(fd.severity, "High", "entrypoint mudo que troca o próprio código tem que sair High");
+  // o decisor aparece nomeado, em nível A, e a regra em nível C
+  const dec = fd.evidence.find((e) => e.tier === "A" && /listed first above/.test(e.claim))!;
+  assert.ok(dec, "os entrypoints decisores não saem em fato A");
+  assert.match(dec.claim, /upgrade/, "o entrypoint que decidiu a severidade não é nomeado");
+  const regra = fd.evidence.find((e) => /Severity rule applied \(class of the silent action/.test(e.claim))!;
+  assert.ok(regra, "a regra de severidade não é impressa");
+  assert.equal(regra.tier, "C", "regra de severidade é julgamento, não fato de bytecode");
+  assert.ok(regra.claim.endsWith("→ High."), `a regra não fecha na severidade: ${regra.claim}`);
+  // e os decisores vêm PRIMEIRO na lista A de entrypoints mudos
+  const lista = fd.evidence.find((e) => e.tier === "A" && /do not reach contract_event/.test(e.claim))!.claim;
+  const nomes = lista.replace(/^.*contract_event: /, "").replace(/\.$/, "").split(", ");
+  const decisores = dec.claim.replace(/^.*listed first above\): /, "").replace(/\.$/, "").split(", ");
+  assert.deepEqual(nomes.slice(0, decisores.length), decisores, "os decisores não abrem a lista de nível A");
+});
+
+test("silent-mutation: só entrypoints com nome de init entre os mudos sai Low", () => {
+  const wasm = load(SILENT_SO_INIT);
+  const fd = detectFull(analyzeModule(wasm), wasm).findings.find((x) => x.class === "silent-mutation")!;
+  assert.ok(fd, "o caso perdeu o achado de silent-mutation");
+  assert.equal(fd.severity, "Low");
+  const lista = fd.evidence.find((e) => e.tier === "A" && /do not reach contract_event/.test(e.claim))!.claim;
+  for (const n of lista.replace(/^.*contract_event: /, "").replace(/\.$/, "").split(", ")) {
+    assert.match(n, /^(initialize|init|setup|bootstrap)(_|$)/i, `${n} não tem nome de init e o achado saiu Low`);
+  }
+  assert.ok(
+    fd.evidence.some((e) => e.tier === "C" && /every silent entrypoint is init-shaped/.test(e.claim)),
+    "a regra não declara por que o achado é Low",
+  );
+});
+
+test("silent-mutation, em todo o corpus: High se e só se há decisor; nunca High por fração", () => {
+  const ADMIN = /^(set_admin|transfer_admin|propose_admin|accept_admin|set_owner|transfer_ownership|upgrade|set_permission|grant|revoke|set_.*role|add_signer|remove_signer|update_signer|pause|unpause|kill|set_fee|set_.*config)(_|$)/i;
+  let alto = 0;
+  for (const f of files) {
+    const wasm = load(f);
+    const an = analyzeModule(wasm);
+    for (const fd of detectFull(an, wasm).findings.filter((x) => x.class === "silent-mutation")) {
+      const lista = fd.evidence.find((e) => e.tier === "A" && /do not reach contract_event/.test(e.claim))!.claim;
+      const mudos = lista.replace(/^.*contract_event: /, "").replace(/\.$/, "").split(", ");
+      const decisores = mudos.filter((n) => {
+        const ep = an.entrypoints.find((e) => e.name === n)!;
+        return canUpgradeSelf(ep) || ADMIN.test(n);
+      });
+      const esperada = decisores.length ? "High" : mudos.every((n) => /^(initialize|init|setup|bootstrap)(_|$)/i.test(n)) ? "Low" : "Medium";
+      assert.equal(fd.severity, esperada, `${f}: mudos=${mudos.length}, decisores=${decisores.length}`);
+      if (fd.severity === "High") alto++;
+      // a regra sai SEMPRE, com a severidade no fim
+      const regra = fd.evidence.find((e) => /Severity rule applied \(class of the silent action/.test(e.claim))!;
+      assert.ok(regra && regra.tier === "C", `${f}: silent-mutation sem a regra em nível C`);
+      assert.ok(regra.claim.endsWith(`→ ${fd.severity}.`), `${f}: regra não fecha na severidade`);
+    }
+  }
+  assert.ok(alto > 0, "nenhum silent-mutation High no corpus — o ramo novo não foi exercitado");
+});
+
+/* ---------- third-party-state-tampering: Tamper no lugar de Elevation ---------- */
+
+/** `deposit`/`swap`/`withdraw(to: Address)` permissionless — par estilo V2. */
+const TAMPER_PAR = "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP.wasm";
+
+test("escritor sem auth que recebe Address no spec vira UM achado de Tamper, não de Elevation", () => {
+  const wasm = load(TAMPER_PAR);
+  const an = analyzeModule(wasm);
+  const fs = detectFull(an, wasm).findings.filter((x) => x.class === "third-party-state-tampering");
+  assert.ok(fs.length > 0, "o caso perdeu os achados de tampering");
+  for (const fd of fs) {
+    assert.equal(fd.stride, "Tamper", "a letra do STRIDE tem que ser Tamper");
+    assert.equal(fd.severity, "Medium", "tampering de terceiro sai Medium, não Critical/High");
+    assert.equal(fd.family, "auth");
+    // o parâmetro que sustenta a classe é nomeado, em nível A
+    const p = fd.evidence.find((e) => e.tier === "A" && /contractspecv0.*address parameter/.test(e.claim))!;
+    assert.ok(p, `${fd.entrypoint}: sem o fato A do parâmetro de endereço`);
+    assert.match(p.claim, new RegExp("`" + fd.entrypoint + "`"), "o fato não nomeia o entrypoint");
+    // e a ressalva de taint é obrigatória — é o que impede afirmar o que o bytecode não mostra
+    assert.ok(
+      fd.evidence.some((e) => e.tier === "C" && /taint from the parameter to the storage key/.test(e.claim)),
+      `${fd.entrypoint}: sem a ressalva C de taint`,
+    );
+    // não pode haver o achado de Elevation do mesmo entrypoint: é UM achado, não dois
+    assert.ok(
+      !detectFull(an, wasm).findings.some((x) => x.entrypoint === fd.entrypoint && x.class === "unauthenticated-state-mutation"),
+      `${fd.entrypoint}: saiu nas DUAS classes`,
+    );
+  }
+});
+
+test("tampering, em todo o corpus: só onde não há auth, há escrita e o spec declara Address", () => {
+  let n = 0;
+  for (const f of files) {
+    const wasm = load(f);
+    const an = analyzeModule(wasm);
+    const spec = lerSpec(wasm);
+    for (const fd of detectFull(an, wasm).findings.filter((x) => x.class === "third-party-state-tampering")) {
+      n++;
+      const ep = an.entrypoints.find((e) => e.name === fd.entrypoint)!;
+      assert.equal(requiresAuth(ep), false, `${f}:${fd.entrypoint} alcança auth e foi reportado como tampering`);
+      assert.equal(writesStorage(ep), true, `${f}:${fd.entrypoint} não alcança escrita`);
+      assert.ok((spec?.addressParams.get(fd.entrypoint) ?? []).length > 0, `${f}:${fd.entrypoint} sem Address no spec`);
+      assert.ok(!/^(initialize|init|setup|bootstrap)(_|$)/i.test(fd.entrypoint), `${f}:${fd.entrypoint} é init e devia ser front-running`);
+      assert.equal(fd.severity, "Medium");
+    }
+  }
+  assert.ok(n > 0, "nenhum tampering no corpus — a classe nova não foi exercitada");
+});
+
+test("as supressões continuam valendo para a classe nova", () => {
+  for (const f of files) {
+    const wasm = load(f);
+    const r = detectFull(analyzeModule(wasm), wasm);
+    const tampering = new Set(r.findings.filter((x) => x.class === "third-party-state-tampering").map((x) => x.entrypoint));
+    for (const s of r.suppressed) {
+      assert.ok(!tampering.has(s.entrypoint), `${f}: ${s.entrypoint} foi suprimido e reportado como tampering`);
+    }
+    for (const ep of tampering) assert.ok(!ep.startsWith("__"), `${f}: ${ep} é reservada e virou tampering`);
+  }
+});
+
+/* ---------- self-implemented-signature-verification: a letra S deixa de ser lacuna ---------- */
+
+/** Verificador estilo EIP-712 dentro do contrato: domain hash, type hash, nonce. */
+const SIG_EIP712 = "CCG5EWFY2KCWWYYEIUMIRG6WSAQFLDR5QE5FMCWY25N36XA5GYTCPQWR.wasm";
+/** Conta inteligente: alcança de fato as host functions de verificação. */
+const SIG_CRYPTO = "CDZK3J2WHJZCOBYQGSZLO5A5JQPBME7FS7XUUOXLH6ZXJI54OI7VGKL2.wasm";
+
+test("spec com domain/type hash e nonce vira achado de Spoof, não lacuna", () => {
+  const wasm = load(SIG_EIP712);
+  const fs = detectFull(analyzeModule(wasm), wasm).findings.filter((x) => x.class === "self-implemented-signature-verification");
+  assert.equal(fs.length, 1, "um fato do contrato, um achado");
+  const [fd] = fs;
+  assert.equal(fd.stride, "Spoof");
+  assert.equal(fd.severity, "Medium");
+  assert.equal(fd.entrypoint, "<contrato>");
+  assert.equal(fd.family, "sig");
+  const simbolos = fd.evidence.find((e) => e.tier === "A" && /Spec symbols matching/.test(e.claim))!;
+  assert.ok(simbolos, "os símbolos casados não saem em fato A");
+  for (const s of ["get_domain_type_hash", "get_nonce"]) {
+    assert.ok(simbolos.claim.includes(s), `${s} sumiu da evidência A`);
+  }
+  assert.ok(
+    fd.evidence.some((e) => e.tier === "C" && /outside the host's `require_auth` framework/.test(e.claim)),
+    "sem a linha C que manda revisar o verificador",
+  );
+  // a letra S deixa de ser lacuna neste contrato
+  assert.ok(!lacunas(detectFull(analyzeModule(wasm), wasm).findings).includes("Spoof"), "Spoof continua declarada como lacuna");
+});
+
+test("achado de assinatura própria cita as host functions de cripto que alcança", () => {
+  const wasm = load(SIG_CRYPTO);
+  const an = analyzeModule(wasm);
+  const fd = detectFull(an, wasm).findings.find((x) => x.class === "self-implemented-signature-verification")!;
+  assert.ok(fd, "o caso perdeu o achado de assinatura própria");
+  const cripto = fd.evidence.find((e) => e.tier === "A" && /reach crypto host functions/.test(e.claim))!;
+  assert.ok(cripto, "as host functions de cripto não saem em fato A");
+  for (const n of cripto.claim.replace(/^.*host functions: /, "").replace(/\.$/, "").split(", ")) {
+    assert.ok(SIG_SCHEME_FNS.has(n), `${n} não é host function do recorte de esquema de assinatura`);
+    assert.ok(an.entrypoints.some((e) => e.reaches.has(n)), `${n} citado mas não alcançável de nenhum export`);
+  }
+});
+
+test("assinatura própria só dispara com cripto alcançável OU casamento forte (≥2 símbolos)", () => {
+  let n = 0;
+  for (const f of files) {
+    const wasm = load(f);
+    const an = analyzeModule(wasm);
+    for (const fd of detectFull(an, wasm).findings.filter((x) => x.class === "self-implemented-signature-verification")) {
+      n++;
+      const cripto = fd.evidence.find((e) => /reach crypto host functions/.test(e.claim));
+      const fraco = fd.evidence.find((e) => /No crypto host function is reachable/.test(e.claim));
+      assert.ok(cripto || fraco, `${f}: achado sem declarar se há cripto alcançável`);
+      if (fraco) {
+        const k = Number(/rests on (\d+) spec symbol/.exec(fraco.claim)![1]);
+        assert.ok(k >= 2, `${f}: achado sem cripto e com um único símbolo (${k})`);
+      }
+      assert.equal(fd.severity, "Medium", `${f}: achado de Spoof com severidade ${fd.severity}`);
+    }
+  }
+  assert.ok(n > 0, "nenhum achado de assinatura própria no corpus — a classe nova não foi exercitada");
+});
+
+/* ---------- archival-risk: Medium com a lacuna de durabilidade declarada ---------- */
+
+test("archival-risk é Medium e declara que o impacto depende da durabilidade", () => {
+  let n = 0;
+  for (const f of files) {
+    const wasm = load(f);
+    for (const fd of detectFull(analyzeModule(wasm), wasm).findings.filter((x) => x.class === "archival-risk")) {
+      n++;
+      assert.equal(fd.stride, "DoS", "a letra continua sendo DoS");
+      assert.equal(fd.severity, "Medium", `${f}: archival-risk com ${fd.severity} — severidade por ausência`);
+      assert.equal(fd.family, "ttl");
+      const dur = fd.evidence.find((e) => /Declared gap on the impact/.test(e.claim));
+      assert.ok(dur, `${f}: sem a linha de durabilidade`);
+      assert.equal(dur!.tier, "C", "a leitura de impacto por durabilidade não é fato de bytecode");
+      for (const p of ["restore footprint", "temporary entry is lost", "instance entry"]) {
+        assert.ok(dur!.claim.includes(p), `${f}: a linha de durabilidade não cobre "${p}"`);
+      }
+      assert.match(dur!.claim, /not read from the bytecode here/, `${f}: a lacuna não é declarada`);
+    }
+  }
+  assert.ok(n > 0, "nenhum archival-risk no corpus — caso não exercitado");
+});
+
+/* ---------- Finding.family: agregação futura por família ---------- */
+
+test("todo achado do corpus carrega uma família conhecida", () => {
+  const FAMILIAS = new Set(["init", "auth", "upgrade", "order", "silent", "ttl", "prng", "sig", "sdk"]);
+  const porClasse = new Map<string, Set<string>>();
+  for (const f of files) {
+    const wasm = load(f);
+    for (const fd of detectFull(analyzeModule(wasm), wasm).findings) {
+      assert.ok(fd.family, `${f}: ${fd.class} sem família`);
+      assert.ok(FAMILIAS.has(fd.family!), `${f}: família desconhecida ${fd.family}`);
+      porClasse.set(fd.class, (porClasse.get(fd.class) ?? new Set()).add(fd.family!));
+    }
+  }
+  // a família é do achado, não do contrato: uma classe não pode oscilar de família
+  for (const [c, fams] of porClasse) assert.equal(fams.size, 1, `${c} aparece em ${[...fams].join("/")}`);
 });

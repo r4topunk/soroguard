@@ -49,9 +49,24 @@
  */
 
 import { rpc, scValToNative } from "@stellar/stellar-sdk";
-import { NETWORKS, fetchWasm, modelFromEntries, parseSpecEntries } from "./spec.ts";
+import { endpointDe, fetchWasm, modelFromEntries, parseSpecEntries } from "./spec.ts";
 import type { Observations, ObservationWindow, ObservedEvent } from "./artifact.ts";
-import { msgs } from "./i18n.ts";
+import type { WindowLimitedBy } from "./model.ts";
+import { msgs, plural } from "./i18n.ts";
+
+export type { WindowLimitedBy } from "./model.ts";
+
+/**
+ * O que `observe` devolve de fato: `Observations` (tipo congelado em `artifact.ts`) MAIS a
+ * declaração de o que fechou a janela. O campo não cabe em `ObservationWindow` sem
+ * descongelar o contrato, e ele é a diferença entre um revisor ler "32 h" como contrato
+ * parado e ler como contrato denso demais para o orçamento de paginação.
+ */
+export type ObserveResult = Observations & {
+  limitedBy: WindowLimitedBy;
+  /** páginas de `getEvents` gastas na paginação (sem contar sondagens) */
+  pagesUsed: number;
+};
 
 /** Ledgers varridos por chamada de getEvents — medido no RPC público da mainnet. */
 export const LEDGER_SCAN_CHUNK = 10_000;
@@ -79,6 +94,14 @@ const SECONDS_PER_LEDGER_FALLBACK = 5;
  * baseline vencido com cara de corrente. Daí metade do orçamento ficar de reserva.
  */
 const ANCHOR_RESERVE = 0.5;
+
+/**
+ * Multiplicador do orçamento quando o contrato é DENSO — quando a primeira página volta
+ * cheia, cada requisição cobre pouquíssimos ledgers e o orçamento nominal produz uma janela
+ * de ~32 h justamente nos contratos com mais tráfego (docs/PRECISION-TOP25.md). Dobrar é
+ * modesto de propósito: o orçamento existe porque o RPC público devolve 429 sob rajada.
+ */
+const DENSE_BUDGET_FACTOR = 2;
 
 export type ObserveOptions = {
   /** janela desejada em ledgers; o default é a retenção inteira do RPC */
@@ -211,9 +234,9 @@ export const declaredFirstTopics = (prefixTopics: string[][]): string[] =>
   [...new Set(prefixTopics.map((t) => t?.[0]).filter((t): t is string => typeof t === "string" && t.length > 0))];
 
 /** Topics declarados no spec do WASM. Falha aqui é lacuna, não erro: devolve vazio. */
-async function declaredTopicsOf(contractId: string, network: string): Promise<string[]> {
+async function declaredTopicsOf(contractId: string, endpoint: string): Promise<string[]> {
   try {
-    const { wasm } = await withRetry(() => fetchWasm(contractId, network));
+    const { wasm } = await withRetry(() => fetchWasm(contractId, endpoint));
     const { events } = modelFromEntries(parseSpecEntries(wasm));
     return declaredFirstTopics(events.map((e) => e.prefixTopics));
   } catch {
@@ -229,13 +252,19 @@ async function declaredTopicsOf(contractId: string, network: string): Promise<st
  * observação nenhuma a reportar, e devolver um objeto vazio faria um contrato inalcançável
  * parecer um contrato parado. Falha parcial de paginação NÃO lança — vira janela menor.
  */
-export async function observe(contractId: string, network: string, opts: ObserveOptions = {}): Promise<Observations> {
-  const url = NETWORKS[network] ?? network;
+export async function observe(contractId: string, endpoint: string, opts: ObserveOptions = {}): Promise<ObserveResult> {
+  // `endpoint` é o RPC — nome conhecido ou URL, e a URL pode carregar API key. Ele fica
+  // nesta função e nas chamadas de rede: nada dele entra em `Observations`, que vai para o
+  // documento. O rótulo de rede que o documento mostra vem de `ctx.network`, separado.
+  const url = endpointDe(endpoint);
   const server = new rpc.Server(url);
   const pageLimit = opts.pageLimit ?? 1000;
   const maxRequests = opts.maxRequests ?? 24;
   const pauseMs = opts.pauseMs ?? 350;
   const anchorRecent = opts.anchorRecent !== false;
+  /** Orçamento efetivo: sobe para `DENSE_BUDGET_FACTOR ×` quando a primeira página vem cheia. */
+  let budget = maxRequests;
+  let denso = false;
   const filters = [{ type: "contract" as const, contractIds: [contractId] }];
 
   // Sondagem: uma chamada mínima que devolve o estado de retenção (latest/oldest + tempos).
@@ -269,7 +298,19 @@ export async function observe(contractId: string, network: string, opts: Observe
   // demais. Como o piso já é o mínimo, um pedido menor que ele nunca muda de lugar — e aí
   // a sondagem é pura queima de requisição, então nem acontece.
   const floorSpan = Math.ceil((MIN_BASELINE_HOURS * 3600) / spl);
-  let reachable = Number.POSITIVE_INFINITY;
+  /**
+   * Teto ABSOLUTO do orçamento: cada requisição varre no máximo `LEDGER_SCAN_CHUNK`
+   * ledgers (nota 2 no topo), então `budget × chunk` é o range que nenhuma coleta
+   * ultrapassa — sem sondar nada.
+   *
+   * Medido em CCR2CH4G num RPC com retenção longa (1.036.799 ledgers, ~67 dias): a
+   * sondagem de densidade não dispara em contrato esparso (página curta), `reachable`
+   * ficava infinito, a varredura começava na ponta ANTIGA e a janela de 375 h terminava
+   * ~52 dias antes do topo. Baseline vencido com cara de corrente — o mesmo defeito da
+   * nota 4, pelo caminho oposto. O teto corrige sem custar uma requisição.
+   */
+  const tetoDoOrcamento = () => Math.max(floorSpan, budget * LEDGER_SCAN_CHUNK);
+  let reachable = anchorRecent ? tetoDoOrcamento() : Number.POSITIVE_INFINITY;
   if (anchorRecent && desired > floorSpan) {
     const dStart = Math.max(floorLedger, probe.latestLedger - LEDGER_SCAN_CHUNK + 1);
     try {
@@ -277,7 +318,14 @@ export async function observe(contractId: string, network: string, opts: Observe
       const dEnd = ledgerFromCursor(d.cursor) ?? d.events.at(-1)?.ledger;
       // Página curta = o chunk de 10k ledgers, não a densidade, é o limite: nada a ancorar.
       if (d.events.length >= pageLimit && dEnd !== undefined && dEnd >= dStart) {
-        reachable = Math.max(floorSpan, Math.floor((dEnd - dStart + 1) * maxRequests * ANCHOR_RESERVE));
+        // Página cheia na sondagem = contrato denso: o orçamento sobe, e o alcance é
+        // calculado com o orçamento que de fato vai ser gasto.
+        denso = true;
+        budget = maxRequests * DENSE_BUDGET_FACTOR;
+        reachable = Math.max(
+          floorSpan,
+          Math.min(tetoDoOrcamento(), Math.floor((dEnd - dStart + 1) * budget * ANCHOR_RESERVE)),
+        );
       }
     } catch {
       /* a sondagem de densidade é otimização de recorte; falhar nela não invalida nada */
@@ -292,7 +340,10 @@ export async function observe(contractId: string, network: string, opts: Observe
   let covered = 0; // último ledger com cobertura COMPROVADA pelo cursor
   let cursor: string | undefined;
 
-  for (let page = 0; page < maxRequests; page++) {
+  let pagesUsed = 0;
+  let orcamentoEstourado = false;
+  for (let page = 0; page < budget; page++) {
+    pagesUsed++;
     let res: rpc.Api.GetEventsResponse;
     try {
       res = await withRetry(() =>
@@ -326,11 +377,21 @@ export async function observe(contractId: string, network: string, opts: Observe
       }
     }
 
+    // A primeira página cheia é o mesmo sinal de densidade da sondagem, para quando ela
+    // não aconteceu (janela pedida ≤ piso) ou falhou.
+    if (res.events.length >= pageLimit) {
+      if (!denso) {
+        denso = true;
+        budget = maxRequests * DENSE_BUDGET_FACTOR;
+      }
+    }
+
     const mark = ledgerFromCursor(res.cursor) ?? res.events.at(-1)?.ledger;
     if (mark === undefined) break; // sem cursor não há prova de cobertura; melhor parar
     covered = Math.max(covered, mark);
     cursor = res.cursor;
     if (!cursor || covered >= probe.latestLedger) break;
+    if (page === budget - 1) orcamentoEstourado = true;
     await sleep(pauseMs);
   }
 
@@ -343,6 +404,22 @@ export async function observe(contractId: string, network: string, opts: Observe
     approxHours: Math.round(approxHours * 100) / 100,
     insufficient: approxHours < MIN_BASELINE_HOURS,
   };
+
+  // Quem fechou a janela. `request-budget` quando a paginação parou antes do topo por falta
+  // de requisições OU quando a ancoragem já recortou o range pedido por causa do orçamento;
+  // `retention` quando pedimos tudo que o RPC retém e a varredura chegou ao fim;
+  // `none` quando a janela pedida coube inteira.
+  //
+  // Materialidade: parar a um punhado de ledgers do topo não é "o orçamento me cortou" —
+  // medido em CCR2CH4G, a varredura cobriu 239.977 dos ~240.000 ledgers da retenção e
+  // ainda assim terminou com cursor antes do tip. Chamar aquilo de limite de orçamento
+  // trocaria uma verdade (é a retenção do RPC) por outra afirmação, igualmente checável e
+  // errada. O corte é uma varredura de página (10k ledgers, ~15 h).
+  const alcancouOPedido = ledgers >= desired - LEDGER_SCAN_CHUNK;
+  const limitedBy: WindowLimitedBy =
+    !alcancouOPedido && (orcamentoEstourado || reachable < desired) ? "request-budget"
+    : desired >= retention ? "retention"
+    : "none";
 
   const events: ObservedEvent[] = [...counts.entries()]
     .map(([topic, c]) => ({
@@ -362,10 +439,48 @@ export async function observe(contractId: string, network: string, opts: Observe
   if (!window.insufficient) {
     const declared = opts.declaredPrefixTopics
       ? declaredFirstTopics(opts.declaredPrefixTopics)
-      : await declaredTopicsOf(contractId, network);
+      : await declaredTopicsOf(contractId, endpoint);
     const seen = new Set(counts.keys());
     declaredButUnseen = declared.filter((t) => !seen.has(t));
   }
 
-  return { window, events, declaredButUnseen };
+  return { window, events, declaredButUnseen, limitedBy, pagesUsed };
 }
+
+/**
+ * A declaração de janela, como sai nos DOIS documentos.
+ *
+ * Existe porque os dois documentos precisam dizer a mesma coisa sobre o mesmo dado, e
+ * porque o número sozinho engana: 32 h e 375 h têm a mesma cara na página, e o caso curto
+ * é sistematicamente o do contrato MAIS movimentado — aquele em que o baseline mais
+ * importa. Sem esta linha o revisor lê a janela curta como falta de tráfego.
+ */
+export function declaracaoDeJanela(ledgers: number, horas: number, limitedBy: WindowLimitedBy): string {
+  const h = horas >= 10 ? horas.toFixed(0) : horas.toFixed(2);
+  return W.declaracao(ledgers, h, limitedBy);
+}
+
+const W = msgs({
+  en: {
+    declaracao: (n: number, h: string, por: WindowLimitedBy) =>
+      `window of ${n} ${plural(n, "ledger", "ledgers")} (~${h} h) — ` +
+      (por === "request-budget"
+        ? "limited by the RPC request budget, not by retention: the collector could not page the whole " +
+          "retained range in the time allowed, and the contracts that emit most events hit this first; " +
+          "baselines are rates over the observed slice, not totals."
+        : por === "retention"
+          ? "limited by RPC retention."
+          : "bounded by the requested window: neither RPC retention nor the request budget cut it short."),
+  },
+  pt: {
+    declaracao: (n: number, h: string, por: WindowLimitedBy) =>
+      `janela de ${n} ${plural(n, "ledger", "ledgers")} (~${h} h) — ` +
+      (por === "request-budget"
+        ? "limitada pelo orçamento de requisições do RPC, não pela retenção: o coletor não conseguiu " +
+          "paginar toda a faixa retida no tempo permitido, e os contratos que mais emitem eventos batem " +
+          "nisso primeiro; os baselines são taxas sobre a fatia observada, não totais."
+        : por === "retention"
+          ? "limitada pela retenção do RPC."
+          : "limitada pela janela pedida: nem a retenção do RPC nem o orçamento de requisições a cortaram."),
+  },
+});

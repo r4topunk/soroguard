@@ -12,6 +12,64 @@ export const NETWORKS: Record<string, string> = {
   testnet: "https://soroban-testnet.stellar.org",
 };
 
+/**
+ * Endpoint efetivo de um `-n`: nome conhecido vira URL, URL passa direto.
+ * O valor devolvido é SEGREDO EM POTENCIAL (um RPC pago carrega a API key no path) e não
+ * pode aparecer em documento, em log nem em mensagem de erro. Ver `redactUrl`.
+ */
+export const endpointDe = (rede: string): string => NETWORKS[rede] ?? rede;
+
+/**
+ * Passphrase → rótulo de rede. É a única forma honesta de rotular uma URL de RPC: o host
+ * não diz em que rede o nó está, e chutar pelo nome do provedor erraria.
+ */
+export const PASSPHRASE_LABELS: Record<string, string> = {
+  "Public Global Stellar Network ; September 2015": "mainnet",
+  "Test SDF Network ; September 2015": "testnet",
+  "Test SDF Future Network ; October 2022": "futurenet",
+};
+
+/** Rótulo de quando não dá para saber — nunca a URL. */
+export const ROTULO_DESCONHECIDO = "custom";
+
+/**
+ * Esconde o path e a query de qualquer URL dentro de `s`.
+ *
+ * Defesa em profundidade para o vazamento de credencial: um RPC pago tem a forma
+ * `https://<provedor>/v2/<API_KEY>`, e essa string chegava aos dois documentos, ao stderr e
+ * ao sumário do CLI. O rótulo de rede (`ctx.network`) resolve o caminho principal; isto
+ * cobre o resto — mensagens de erro do SDK e do `fetch`, que embutem a URL chamada.
+ */
+export function redactUrl(s: string): string {
+  return String(s).replace(
+    /([a-z][a-z0-9+.-]*:\/\/[^\s/?#'"`]*)([/?][^\s'"`<>)\]]*)/gi,
+    (_m, origem: string) => `${origem}/…`,
+  );
+}
+
+/**
+ * Rótulo da rede em que o RPC está, perguntado ao próprio nó (`getNetwork` → `passphrase`).
+ *
+ * Uma única ida à rede por execução, e ela NUNCA propaga a URL: qualquer falha vira
+ * `custom`, porque "não sei em que rede isto está" é uma afirmação legítima e a URL não é
+ * uma resposta — é uma credencial.
+ */
+export async function rotuloDaRede(rpcUrl: string, timeoutMs = 8_000): Promise<string> {
+  try {
+    const r = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getNetwork" }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const j = (await r.json()) as { result?: { passphrase?: unknown } };
+    const p = j?.result?.passphrase;
+    return (typeof p === "string" && PASSPHRASE_LABELS[p]) || ROTULO_DESCONHECIDO;
+  } catch {
+    return ROTULO_DESCONHECIDO;
+  }
+}
+
 /** Decodifica a custom section `contractspecv0` numa lista de entradas XDR. */
 export function parseSpecEntries(wasm: Uint8Array): unknown[] {
   const section = customSection(wasm, "contractspecv0");
@@ -129,8 +187,12 @@ export function modelFromEntries(entries: unknown[]): Pick<ContractModel, "fns" 
   return { fns, errors, events, specEntryCounts };
 }
 
-export async function fetchWasm(contractId: string, network: string): Promise<{ wasm: Uint8Array; wasmHash?: string }> {
-  const url = NETWORKS[network] ?? network;
+/**
+ * `endpoint` é o RPC: nome conhecido ou URL. É o único lugar em que a URL (possivelmente
+ * com API key) é usada — ela não volta em nenhum campo do resultado.
+ */
+export async function fetchWasm(contractId: string, endpoint: string): Promise<{ wasm: Uint8Array; wasmHash?: string }> {
+  const url = endpointDe(endpoint);
   const server = new rpc.Server(url);
   const wasm = await server.getContractWasmByContractId(contractId);
   let wasmHash: string | undefined;

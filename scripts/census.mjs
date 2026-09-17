@@ -10,7 +10,16 @@
 //   hashes    group contracts by code hash                  -> <PRIV>/hashes.json
 //   fetch     pull each distinct wasm from the RPC          -> <PRIV>/wasm/<hash>.wasm
 //   analyze   analyzeModule + detectFull + sdk + spec       -> <PRIV>/results.jsonl
+//   tops      representative + ranked shortlists            -> <PRIV>/{top-by-volume,top-by-instances}.json
 //   aggregate only aggregates, into the repo                -> corpus/census/{summary.json,SUMMARY.md}
+//
+// THE REPRESENTATIVE OF A CODE HASH. One binary is usually deployed many times, and an online
+// check can only be run against one of those instances. Picking the wrong one is not a cosmetic
+// problem: in 5 of the first 25 triaged families the id that had been picked was 8x–20x quieter
+// than the busiest sibling, so the observation described a dormant deploy and said nothing about
+// the instance that actually carries traffic. Every hash therefore records BOTH candidates —
+// `busiest` (max invocations) and `newest` (max created) — and `--representative` selects which
+// one is written wherever an id is emitted. Default: busiest.
 //
 // Every phase is cached on disk, so a rerun resumes instead of redoing work.
 //
@@ -24,7 +33,12 @@
 //
 //   node scripts/census.mjs                      # the whole pipeline, resumable
 //   node scripts/census.mjs aggregate            # only that phase, on whatever is on disk
+//   node scripts/census.mjs hashes               # regroup the CACHED index pages, no network,
+//                                                #   rewrites hashes.json and the shortlists
+//   node scripts/census.mjs tops                 # only the shortlists, from hashes.json
 //   node scripts/census.mjs --max-hashes 500     # cap the number of distinct modules
+//   node scripts/census.mjs --representative newest   # busiest (default) | newest
+//   node scripts/census.mjs --help
 //
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -182,22 +196,62 @@ function addRecord(acc, r) {
   if (!h) { if (r.asset) acc.sac++; else acc.unknown++; return null; }
   acc.wasm++;
   let g = acc.byHash.get(h), fresh = false;
-  if (!g) { acc.byHash.set(h, (g = { instances: 0, invocations: 0, subinvocations: 0, events: 0, errors: 0, minCreated: null })); fresh = true; }
+  if (!g) {
+    acc.byHash.set(h, (g = {
+      instances: 0, invocations: 0, subinvocations: 0, events: 0, errors: 0, minCreated: null,
+      busiest: null, newest: null,
+    }));
+    fresh = true;
+  }
+  const inv = r.invocations ?? 0, ev = r.events ?? 0;
   g.instances++;
-  g.invocations += r.invocations ?? 0;
+  g.invocations += inv;
   g.subinvocations += r.subinvocation ?? 0;
-  g.events += r.events ?? 0;
+  g.events += ev;
   g.errors += r.errors ?? 0;
   if (r.created != null && (g.minCreated == null || r.created < g.minCreated)) g.minCreated = r.created;
+  // Ties keep the first instance seen; the index is enumerated in ascending creation order, so
+  // "first seen" means the oldest, which is the stable choice across reruns.
+  if (g.busiest == null || inv > g.busiest.invocations) g.busiest = { contract: r.contract, invocations: inv, events: ev };
+  if (r.created != null && (g.newest == null || r.created > g.newest.created)) g.newest = { contract: r.contract, created: r.created };
   return fresh ? h : null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Representative selection — see the header comment.
+ * ------------------------------------------------------------------ */
+
+const REP_MODES = ["busiest", "newest"];
+let REPRESENTATIVE = "busiest";
+
+/** The contract id to use for any online check of this code hash, under the current mode. */
+function representativeOf(g) {
+  const first = REPRESENTATIVE === "newest" ? g?.newest : g?.busiest;
+  return first?.contract ?? g?.busiest?.contract ?? g?.newest?.contract ?? null;
 }
 
 let CROSS_CHECK = null;
 
 function writeHashes(acc) {
-  const hashes = Object.fromEntries([...acc.byHash.entries()].sort((a, b) => b[1].instances - a[1].instances));
+  const hashes = Object.fromEntries([...acc.byHash.entries()]
+    .sort((a, b) => b[1].instances - a[1].instances)
+    .map(([h, g]) => [h, {
+      instances: g.instances,
+      siblings: Math.max(0, g.instances - 1),   // instances other than the representative
+      invocations: g.invocations,               // kept: the aggregate weights read this name
+      invocationsSum: g.invocations,
+      subinvocations: g.subinvocations,
+      events: g.events,
+      eventsSum: g.events,
+      errors: g.errors,
+      minCreated: g.minCreated,
+      busiest: g.busiest,
+      newest: g.newest,
+      representative: representativeOf(g),
+    }]));
   writeJson(HASHES_JSON, {
     generatedAt: new Date().toISOString(),
+    representativeBy: REPRESENTATIVE,
     totals: { indexed: acc.contracts.size, wasmContracts: acc.wasm, sacContracts: acc.sac, noCodeNoAsset: acc.unknown, distinctHashes: acc.byHash.size },
     crossCheck: CROSS_CHECK ? { ...CROSS_CHECK, wasmDelta: acc.wasm - CROSS_CHECK.expertWasm, sacDelta: acc.sac - CROSS_CHECK.expertSac } : null,
     hashes,
@@ -234,6 +288,108 @@ function replayCachedPages(acc, onNewHash) {
     }
   }
   return files.length;
+}
+
+/* ------------------------------------------------------------------ *
+ * HASHES (standalone) — regroup the cached index pages. No network.
+ * ------------------------------------------------------------------ */
+
+function stageHashes() {
+  const t0 = now();
+  const acc = newIndexAcc();
+  CROSS_CHECK = readJson(HASHES_JSON, {})?.crossCheck ?? null; // keep whatever the online run measured
+  const pages = replayCachedPages(acc, () => {});
+  writeHashes(acc);
+  log(`  hashes: ${pages} cached pages, ${acc.contracts.size} contracts, ${acc.byHash.size} distinct hashes  ${secs(t0)}`);
+  return acc;
+}
+
+/* ------------------------------------------------------------------ *
+ * TOPS — the private shortlists an online run works from.
+ * ------------------------------------------------------------------ */
+
+const TOP_N = 25;
+
+function readResults() {
+  if (!existsSync(RESULTS)) return [];
+  return readFileSync(RESULTS, "utf8").split("\n").filter(Boolean)
+    .flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+}
+
+/** One shortlist row. Carries both candidates so a reader can see what was NOT picked. */
+function topRow(rank, hash, g) {
+  return {
+    rank,
+    hash,
+    inv: g.invocationsSum ?? g.invocations ?? 0,
+    inst: g.instances ?? 0,
+    events: g.eventsSum ?? g.events ?? 0,
+    siblings: g.siblings ?? Math.max(0, (g.instances ?? 1) - 1),
+    representativeBy: REPRESENTATIVE,
+    contract: representativeOf(g),
+    busiest: g.busiest ?? null,
+    newest: g.newest ?? null,
+  };
+}
+
+function writeTops(meta) {
+  const entries = Object.entries(meta.hashes);
+
+  const byVolume = entries
+    .sort((a, b) => (b[1].invocationsSum ?? 0) - (a[1].invocationsSum ?? 0))
+    .slice(0, TOP_N)
+    .map(([h, g], i) => topRow(i + 1, h, g));
+  writeJson(PRIV + "top-by-volume.json", byVolume);
+
+  const byInstances = entries
+    .filter(([, g]) => (g.invocationsSum ?? 0) > 0)   // a never-invoked family has nothing to observe
+    .sort((a, b) => (b[1].instances ?? 0) - (a[1].instances ?? 0))
+    .slice(0, TOP_N)
+    .map(([h, g], i) => topRow(i + 1, h, g));
+  writeJson(PRIV + "top-by-instances.json", byInstances);
+
+  return { byVolume: byVolume.length, byInstances: byInstances.length };
+}
+
+/**
+ * The manual-triage shortlist: a Critical or High unauthenticated-state-mutation on a binary
+ * with real deployment. Each row carries the representative id so the online step never has to
+ * guess which instance to look at.
+ */
+function writeTriageCandidates(meta, results) {
+  const weightOf = (h) => meta.hashes[h] ?? { instances: 0, invocations: 0 };
+  const rows = results
+    .filter((r) => r.ok)
+    .filter((r) => (r.unauth ?? []).some((u) => u.sev === "Critical" || u.sev === "High"))
+    .map((r) => ({ r, w: weightOf(r.hash) }))
+    .filter(({ w }) => (w.instances ?? 0) >= 2 || (w.invocations ?? 0) >= 100)
+    .sort((a, b) => (b.w.invocationsSum ?? b.w.invocations ?? 0) - (a.w.invocationsSum ?? a.w.invocations ?? 0))
+    .map(({ r, w }) => JSON.stringify({
+      hash: r.hash,
+      instances: w.instances ?? 0,
+      siblings: w.siblings ?? Math.max(0, (w.instances ?? 1) - 1),
+      invocations: w.invocationsSum ?? w.invocations ?? 0,
+      events: w.eventsSum ?? w.events ?? 0,
+      representativeBy: REPRESENTATIVE,
+      contract: representativeOf(w),
+      busiest: w.busiest ?? null,
+      newest: w.newest ?? null,
+      sdk: r.sdk?.version ?? null,
+      soundness: r.soundness,
+      entrypoints: (r.unauth ?? []).filter((u) => u.sev === "Critical" || u.sev === "High"),
+    }));
+  writeFileSync(PRIV + "triage-candidates.jsonl", rows.join("\n") + (rows.length ? "\n" : ""));
+  return rows.length;
+}
+
+function stageTops() {
+  const t0 = now();
+  const meta = readJson(HASHES_JSON, null);
+  if (!meta) throw new Error("no hashes.json yet");
+  if (!Object.values(meta.hashes)[0]?.busiest) throw new Error("hashes.json predates per-instance stats: run `hashes` first");
+  const n = writeTops(meta);
+  const t = writeTriageCandidates(meta, readResults());
+  log(`  tops: top-by-volume=${n.byVolume} top-by-instances=${n.byInstances} triage-candidates=${t} (representative=${REPRESENTATIVE})  ${secs(t0)}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -718,21 +874,9 @@ async function stageAggregate({ quiet = false } = {}) {
   };
 
   /* --- triage candidates (PRIVATE: maps findings to hashes) ----------- */
-  const candidates = ok
-    .filter((r) => (r.unauth ?? []).some((u) => u.sev === "Critical" || u.sev === "High"))
-    .map((r) => ({ r, w: weightOf(r.hash) }))
-    .filter(({ w }) => (w.instances ?? 0) >= 2 || (w.invocations ?? 0) >= 100)
-    .sort((a, b) => (b.w.invocations ?? 0) - (a.w.invocations ?? 0))
-    .map(({ r, w }) => JSON.stringify({
-      hash: r.hash,
-      instances: w.instances ?? 0,
-      invocations: w.invocations ?? 0,
-      events: w.events ?? 0,
-      sdk: r.sdk?.version ?? null,
-      soundness: r.soundness,
-      entrypoints: (r.unauth ?? []).filter((u) => u.sev === "Critical" || u.sev === "High"),
-    }));
-  writeFileSync(PRIV + "triage-candidates.jsonl", candidates.join("\n") + (candidates.length ? "\n" : ""));
+  const nCandidates = writeTriageCandidates(meta, results);
+  // the shortlists an online run works from — also private
+  if (Object.values(meta.hashes)[0]?.busiest) writeTops(meta);
 
   const summary = {
     generatedAt: new Date().toISOString().slice(0, 10),
@@ -781,7 +925,7 @@ async function stageAggregate({ quiet = false } = {}) {
         instances: unauthInstances, instanceShare: unauthInstances / (instTotal || 1),
       },
     },
-    usage: { view: usageView, byTier: byUsageTier, tierLabels: TIER_LABEL, triageCandidates: candidates.length },
+    usage: { view: usageView, byTier: byUsageTier, tierLabels: TIER_LABEL, triageCandidates: nCandidates },
     suppressions: { total: Object.values(suppH).reduce((a, b) => a + b, 0), byReason: sortDesc(suppH) },
     strideGapRateByHash: Object.fromEntries(
       ["Spoof", "Tamper", "Repudiate", "Info", "DoS", "Elevation"].map((s) => [s, (gapH[s] ?? 0) / H])),
@@ -1066,16 +1210,60 @@ Steps 1–4 run as a pipeline: a hash discovered on page *n* is fetched and anal
  * main
  * ------------------------------------------------------------------ */
 
+const HELP = `soroguard mainnet census
+
+  node scripts/census.mjs [stage] [options]
+
+Stages (no stage = the whole pipeline: index -> fetch -> analyze -> aggregate, resumable)
+  hashes       regroup the CACHED index pages into hashes.json, then the shortlists. No network.
+  tops         rebuild top-by-volume.json, top-by-instances.json and triage-candidates.jsonl
+               from hashes.json + results.jsonl. No network.
+  aggregate    aggregate whatever is on disk into corpus/census/
+
+Options
+  --max-hashes <n>            cap the number of distinct modules fetched/analyzed
+  --representative <mode>     which instance of a code hash stands in for the family wherever a
+                              contract id is written (hashes.json, the shortlists, the triage
+                              list). One of:
+                                busiest   the instance with the most invocations  [default]
+                                newest    the most recently created instance
+                              A family is many deploys of one binary; the wrong pick describes a
+                              dormant sibling instead of the deploy that carries the traffic.
+  --help, -h                  this text
+
+Per-hash record in hashes.json: instances, siblings, invocationsSum, eventsSum,
+busiest {contract, invocations, events}, newest {contract, created}, representative.
+`;
+
 if (process.argv.includes("--analyze-worker")) {
   await analyzeWorkerMain();
 } else {
   const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(HELP);
+    process.exit(0);
+  }
   const maxAt = args.indexOf("--max-hashes");
   const maxHashes = maxAt >= 0 ? Number(args[maxAt + 1]) : 0;
-  const wanted = args.filter((a, i) => !a.startsWith("--") && !(maxAt >= 0 && i === maxAt + 1));
+  const repAt = args.indexOf("--representative");
+  if (repAt >= 0) {
+    const mode = args[repAt + 1];
+    if (!REP_MODES.includes(mode)) {
+      console.error(`--representative must be one of: ${REP_MODES.join(" | ")}`);
+      process.exit(2);
+    }
+    REPRESENTATIVE = mode;
+  }
+  const valueAt = new Set([maxAt >= 0 ? maxAt + 1 : -1, repAt >= 0 ? repAt + 1 : -1]);
+  const wanted = args.filter((a, i) => !a.startsWith("--") && !valueAt.has(i));
   const T0 = now();
   if (wanted.includes("aggregate") && wanted.length === 1) {
     await stageAggregate({});
+  } else if (wanted.includes("hashes") && wanted.length === 1) {
+    stageHashes();
+    stageTops();
+  } else if (wanted.includes("tops") && wanted.length === 1) {
+    stageTops();
   } else {
     await pipeline(maxHashes);
   }

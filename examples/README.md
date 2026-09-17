@@ -30,44 +30,45 @@ not three successes.
 
 ## The examples
 
-### `CCR2CH4GQVCZHG7CHFVM…` — the closest to a submittable monitoring plan
+### `CCR2CH4GQVCZHG7CHFVM…` — the closest to a submittable pair
 
 [threat model](CCR2CH4GQVCZHG7CHFVM-threat-model.md) ·
 [monitoring plan](CCR2CH4GQVCZHG7CHFVM-monitoring-plan.md)
 
 What is derivable: a 90,138-byte contract (WASM hash
 `003710b383f9da7d650a7f719a7be479110266427817ebbed61d924505fcd7c7`) with 57
-spec-declared functions and 14 declared event types (`init`, `swap`, `mint`,
-`burn`, `collect`, `collect_p`, …) over storage keys `bline`, `FLOCK`,
-`padmin`, `params`, `pstate` and `schema_v` — the surface of a
+exported, 56 invocable entrypoints — 15 reach `require_auth*`, 20 reach a
+storage write, 12 reach `call`/`try_call` — over storage keys `bline`,
+`FLOCK`, `padmin`, `params`, `pstate` and `schema_v`, the surface of a
 concentrated-liquidity AMM pool. The project behind the address is not
 identified in our corpus index and is not guessed here.
 
-The observed window was 120,663 ledgers (~185.79 h, ledgers 64345409–64466071),
-in which exactly 1 distinct topic appeared: `swap`, 2,319 times, ~12
-events/hour. The other 13 topics the spec declares — including `init` — were
-never seen in the window. The threat model derives two threats —
-`Elevation.1` (`initialize` reaches state initialization without requiring
-authorization, severity cell: "Medium — tier C, a risk judgement, not a
-bytecode fact") and `Repudiate.1` (6 of 20 state-changing entrypoints emit no
-event, same severity cell: Medium) — and declares four STRIDE letters as
-gaps. The monitoring plan turns both into monitors and is the only one of the
-18 whose baseline is grounded in the window: `Elevation.1.M.1` carries
-**Baseline (B): 0 emissions of `[init]` in the window of 120,663 ledgers** — a
-topic declared in the spec and confirmed never observed, which is a measured
-zero rather than an absent number.
+The observed window was 120,662 ledgers (~185.55 h, ledgers
+64346922–64467583); the monitoring plan's own window line reads *"window of
+120662 ledgers (~186 h) — limited by RPC retention"* — this collector reached
+the end of the retained range before its budget ran out, unlike the busier
+contract below. Exactly 1 distinct topic appeared: `swap`, 2,319 times
+(~12.5/h). The other 13 declared topics, including `init`, were never seen.
+The threat model derives two threats — `Elevation.1` (`initialize` reaches
+state initialization without requiring authorization, severity cell: "Medium
+— tier C, a risk judgement, not a bytecode fact") and `Repudiate.1` (6 of 20
+state-changing entrypoints emit no event, same severity cell) — and declares
+four STRIDE letters (Spoof, Tamper, Info, DoS) as gaps. `initialize` carries
+an on-chain probe: *"Probe (unsigned simulateTransaction, ledger 64467583):
+guarded — simulation reverted with Error(Contract, #41) =
+`Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot
+initializer has already fired on this instance."*
 
-Verdict: threat model **NOT submittable — 4 blockers**; monitoring plan **NOT
-submittable — 2 blockers**. The threat model's four blockers are one per
-declared-gap STRIDE letter (Spoof, Tamper, Info, DoS): each reads *"STRIDE
-letter [X] has no issue — the template requires at least one; fill it from
-the worksheet in the [X] gap section (it lists the concrete surface to
-review)."* Why: the official template requires at least one issue per STRIDE
-letter, and the validator now refuses to call a document with an empty letter
-submittable — it hands back a worksheet per letter instead. The monitoring
-plan's two blockers are unchanged in kind: `Repudiate.1.M.1` having no
-baseline (a state-diff observable never appears in `getEvents`, so there is no
-historical count) and no owner or notification channel on the two rows of §5.
+Verdict: threat model **NEEDS INPUT.** *"The tool's own checks pass; 5 items
+below are input that no bytecode or on-chain analysis produces. Filling them
+is what makes this document submittable — nothing in the analysis has to
+change."* One item is the business-purpose section 1; the other four are one
+per declared-gap STRIDE letter (Spoof, Tamper, Info, DoS), each pointing at
+that letter's worksheet. The monitoring plan carries no separate verdict
+label, only its own "Input the team must provide before submitting" list —
+2 items here: `Repudiate.1.M.1` has no recorded baseline (a state-diff
+observable never appears in `getEvents`, so there is no historical count),
+and an owner and notification channel are missing on the 2 rows of §5.
 Neither is derivable from the binary.
 
 ### `CBBMQBNHB2FYVZYV7VNH…` — the busiest, and the one with the most threats
@@ -79,40 +80,53 @@ This address is identified in our own triage notes as an **Aquarius
 concentrated-liquidity pool** (`soroban-amm`, soroban-sdk 25.3.0). It is the
 largest surface in the set: 90,057 bytes (WASM hash
 `12fca5a7a96577273b6d4184cf9c984036cda0e8f0594747e7b2933dced37ee6`), 96
-invocable entrypoints, 25 of them reaching `call`/`try_call`, and a single
-declared event type (`claim_fees`).
+invocable entrypoints, 38 reaching `require_auth*`, 53 reaching a storage
+write, 25 reaching `call`/`try_call`, and a single declared event type
+(`claim_fees`).
 
 It is also the only contract in the set busy enough that the collector spent
-its whole budget without reaching back a week: the window is 17,667 ledgers
-(~27.2 h, ledgers 64448409–64466075), holding 14,071 events across 9 distinct
-topics — the most of any of the 18. `update_reserves` (4,688), `pool_state`
-(4,667) and `trade` (4,661) run at ~171–172 events/hour each; `claim_fees`
-(23), `claim_reward` (18), `position_update` (6), `deposit_liquidity` (4),
-`claim_protocol_fee` (2) and `withdraw_liquidity` (2) make up the tail. Note
-that only one of those nine, `claim_fees`, is declared in the contract's spec:
-the observation sees more than the spec admits to.
+its whole budget without reaching back very far — its window line reads
+*"window of 40160 ledgers (~62 h) — limited by the RPC request budget, not by
+retention: the collector could not page the whole retained range in the time
+allowed, and the contracts that emit most events hit this first."* That
+window (~61.76 h, ledgers 64427432–64467591) holds 42,457 events across 9
+distinct topics — the most of any of the 18. `update_reserves` (14,149),
+`pool_state` (14,075) and `trade` (14,062) run at ~228–229 events/hour each;
+`claim_fees` (77), `claim_reward` (66), `position_update` (13),
+`deposit_liquidity` (9), `withdraw_liquidity` (4) and `claim_protocol_fee`
+(2) make up the tail. Note that only one of those nine, `claim_fees`, is
+declared in the contract's spec: the observation sees more than the spec
+admits to.
 
-The threat model derives six threats, five of them
-`Elevation.n` for a distinct `initialize*` entrypoint reaching state
-initialization without requiring authorization — severity cell on each:
-"Medium — tier C, a risk judgement, not a bytecode fact" — and every one of
-those five is explicitly flagged for human confirmation: the write sits 3 to 4
-hops away through what is probably a shared helper, and reachability
-over-approximates the positive claim. The sixth, `Repudiate.1` (11 of 43
-state-changing entrypoints emit no event), carries the same severity cell:
-Medium.
+The threat model derives six threats, rendered as one aggregated block plus
+one standalone finding: `Elevation.1 – Elevation.5 —` `initialization-front-running`
+`in 5 entrypoints` (`init_pools_plane`, `initialize`, `initialize_all`,
+`initialize_boost_config`, `initialize_rewards_config`, each Medium — tier C,
+each flagged "confirm before treating as a finding"), and `Repudiate.1` (11
+of 43 state-changing entrypoints emit no event, High — tier C). Each of the
+five carries its own on-chain probe, all at ledger 64467591: `init_pools_plane`
+— *"guarded — simulation reverted with Error(Contract, #202) =
+`ConcentratedPoolError::PlaneAlreadyInitialized`"*; `initialize` — *"guarded
+— simulation reverted with Error(Contract, #201) =
+`ConcentratedPoolError::PoolAlreadyInitialized`"*; `initialize_all` — the same
+`#202`/`PlaneAlreadyInitialized`; `initialize_boost_config` and
+`initialize_rewards_config` — both *"guarded — simulation reverted with
+Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`"*.
 
-Verdict: threat model **NOT submittable — 4 blockers**; monitoring plan **NOT
-submittable — 6 blockers**. The threat model's four blockers are the same
-shape as the other two contracts: one per declared-gap STRIDE letter (Spoof,
-Tamper, Info, DoS), each pointing at that letter's worksheet — the template
-requires at least one issue per letter, and the validator refuses to call an
-empty letter submittable. Of the monitoring plan's six, five monitors have no
-baseline because the observable is an invocation visible in the transaction's
-`InvokeHostFunction` operation rather than in the event stream; the sixth
-blocker is, again, the missing owner and notification channel on §5's rows.
-This is the example that shows the pipeline producing volume — and the
-validator refusing to call volume coverage.
+Verdict: threat model **NEEDS INPUT.** *"The tool's own checks pass; 5 items
+below are input that no bytecode or on-chain analysis produces."* — the
+business-purpose section plus one item per declared-gap letter (Spoof,
+Tamper, Info, DoS); `Repudiate.1` is a real High-severity finding here, not a
+gap. The monitoring plan's "Input the team must provide before submitting"
+list has 6 items: the five `Elevation.n.M.1` monitors each have no recorded
+baseline (this monitor is not event-based; its baseline is the current
+on-chain value, to be recorded at plan approval), and an owner and
+notification channel are missing on 5 rows of §5. On top of that, the plan
+carries an extra "Do not submit without closing these points" callout:
+*"Threat Repudiate.1 (High) has no monitor, and the document justifies the
+lack of an on-chain observable with a named off-chain control. What is
+missing is that control's owner: a High threat with no active coverage and
+no owner is not submittable."*
 
 ### `CDZY62OKIPJAB4HH44BI…` — the honest-gap path
 
@@ -124,50 +138,81 @@ multisig smart account example (`MultisigContract`, soroban-sdk 23.4.0): a
 34,945-byte account contract (WASM hash
 `f340242d143b42e273f628f44ccb907f55f5beb256f3de17de2c005fcdbc9783`) exporting
 `__check_auth`, `__constructor`, `upgrade`, the context-rule and signer
-management functions, and `execute`.
+management functions, and `execute`. Of 13 invocable entrypoints, 10 reach
+`require_auth*`, 9 reach a storage write and 5 reach `call`/`try_call`.
 
-A window of 120,661 ledgers (~185.79 h, ledgers 64345418–64466078) was
-collected, and it holds **0 events, of any topic**. This is the case the quality
-contract exists for: the number is measured, not missing, and the plan says so
-in those words — *"absence of traffic, not a traffic profile"* — instead of
-presenting a zero as a baseline. The two derived threats are `Repudiate.1` (1
-of 9 state-changing entrypoints emits no event, severity cell: "Medium — tier
-C, a risk judgement, not a bytecode fact") and `Elevation.1` (exposure to
-CVE-2026-26267 / GHSA-4chv-4c6w-w254 through the SDK version, with
-exploitability explicitly not confirmed, severity cell: "Low — tier C, a risk
-judgement, not a bytecode fact").
+A window of 120,661 ledgers (~185.55 h, ledgers 64346934–64467594) was
+collected — its window line, like the pool above's, reads *"window of 120661
+ledgers (~186 h) — limited by RPC retention"* — and it holds no event of any
+topic. This is the case the quality contract exists for: the number is
+measured, not missing, and the document says so in those words — *"no event
+of any topic was observed for this contract in the window — absence of
+traffic, not a traffic profile"* — instead of presenting a zero as a
+baseline. Three threats are derived now, not two: `Spoof.1` (the contract
+implements signature verification of its own, outside the host's
+`require_auth` framework, Medium — tier C), `Repudiate.1` (1 of 9
+state-changing entrypoints emits no event, High — tier C) and `Elevation.1`
+(exposure to CVE-2026-26267 / GHSA-4chv-4c6w-w254 through soroban-sdk 23.4.0,
+exploitability explicitly not confirmed, Low — tier C). There is no init
+finding on this contract, so no probe line applies here.
 
-Verdict: threat model **NOT submittable — 4 blockers**; monitoring plan **NOT
-submittable — 3 blockers**. The threat model's four blockers are the same
-per-letter shape as the other two contracts: one for each of Spoof, Tamper,
-Info and DoS, each pointing at that letter's worksheet — the template requires
-at least one issue per letter, and the validator refuses to call an empty
-letter submittable. Of the monitoring plan's three, the load-bearing one is
-the empty window itself. The other two are the baseline-less monitor and the
-missing owner and notification channel on §5's rows.
+Verdict: threat model **NEEDS INPUT.** *"The tool's own checks pass; 4 items
+below are input that no bytecode or on-chain analysis produces."* — the
+business-purpose section plus one item per remaining declared-gap letter
+(Tamper, Info, DoS); Spoof is now covered by `Spoof.1` and is no longer one
+of the gaps. The monitoring plan's "Input the team must provide before
+submitting" list has 2 items — `Repudiate.1.M.1` has no recorded baseline,
+and an owner and notification channel are missing on 2 rows of §5 — plus an
+extra "Do not submit without closing these points" callout: *"The observed
+window of 120661 ledgers recorded no event of any topic for this contract:
+that is absence of traffic, not a traffic profile. The counts are real and
+still cannot support a threshold — widen the window, or state that the
+thresholds are provisional, before submitting."*
 
 ## What to read for
 
 - **The evidence tiers.** Every claim is marked (A) bytecode fact, (B) observed
   on-chain, or (C) inference. The rule the tool does not break is never
   presenting a C as an A.
-- **The declared gaps.** Four of the six STRIDE letters — Spoof, Tamper, Info,
-  DoS — come out as a declared gap in all three documents, each with a stated
-  reason. The template asks for at least one *issue* per letter; a declared
-  gap is the honest text, but it is not an issue, so the validator now scores
-  each empty letter as a submission blocker and points at that letter's
-  worksheet — one blocker per empty letter. That is why all three threat
-  models below verdict as **NOT submittable — 4 blockers** even though every
-  letter is covered by honest text.
+- **The submission verdict.** Every threat model now ends with one of three
+  states. **SUBMITTABLE** means every check passes and nothing is left for the
+  team to fill in. **NEEDS INPUT** — the state all three examples here are
+  in — means the analysis itself is clean but a numbered list of items (the
+  business-purpose section, one per empty STRIDE letter) still needs the
+  team's answers before the document can be called submittable. **NOT
+  SUBMITTABLE** means the tool found its own blockers on top of that — none
+  of the three examples land there, because none has an internal
+  inconsistency the tool itself flags as broken.
+- **The declared gaps.** The STRIDE letters with no derivable finding — four
+  of six for the two AMM pools (Spoof, Tamper, Info, DoS), three for the
+  multisig account (Tamper, Info, DoS, now that Spoof carries a real finding)
+  — come out as a declared gap, each with a stated reason. The template asks
+  for at least one *issue* per letter; a declared gap is the honest text, but
+  it is not an issue, so it becomes one line in the "Input the team must
+  provide before submitting" list, pointing at that letter's worksheet.
+- **The aggregated finding block.** When one class of finding repeats across
+  several entrypoints of the same shape, it renders once, not once per
+  entrypoint: `CBBMQBNHB2FYVZYV7VNH`'s five initialization-front-running
+  findings appear as a single block, `Elevation.1 – Elevation.5 —
+  initialization-front-running in 5 entrypoints`, with a row per entrypoint.
+  Each ID still keeps its own anchor, its own row in the threat table, and
+  its own numbered remediation.
+- **The on-chain probe.** Every init-shaped finding in these three documents
+  carries a line of the form *"Probe (unsigned simulateTransaction, ledger
+  N): guarded — …"*, naming the contract error the simulation reverted with.
+  `CDZY62OKIPJAB4HH44BI` has no such line because it has no init finding —
+  its `Elevation.1` is an SDK-exposure finding instead.
 - **The `⟨to be defined — not derivable from the binary⟩` markers.** Owners,
   channels, business purpose, external contract addresses. The tool has none of
   them and does not invent them.
 - **`Did we do a good job?`** — the self-check section in every document. In
-  the monitoring plans it ends with a literal *"Do not submit without closing
-  these points"* list — the validator's output, not prose. The threat models
-  do not render that list inline; their verdict and per-letter blockers come
-  from the same validator, run through the CLI (`soroguard artifact <id>`),
-  and are quoted in each example's verdict line above.
+  the monitoring plans it ends with the "Input the team must provide before
+  submitting" list, and where a High/Critical threat is left uncovered or a
+  window came back empty, an additional *"Do not submit without closing these
+  points"* callout above it — the validator's output, not prose. The threat
+  models carry the analogous list under their own "Submission verdict"
+  heading, run through the CLI (`soroguard artifact <id>`), and are quoted in
+  each example's verdict paragraph above.
 
 ## Regenerating
 

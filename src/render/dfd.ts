@@ -91,7 +91,7 @@ const M = msgs({
 
     /* fronteiras */
     tbExterno: "Outside the contract — untrusted actors",
-    tbAuth: "require_auth* reachable on some path — who is authorized (caller vs. admin) is not derivable",
+    tbAuth: "require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap",
     tbAberto: (forca: string) => `No authorization boundary — no path reaches require_auth* in this module (${forca})`,
     forcaSolida: "sound for this call graph",
     forcaNaoSolida: (razao: string) => `NOT sound: ${razao}`,
@@ -168,7 +168,7 @@ const M = msgs({
     outroContrato: "Outro contrato — endereço resolvido em runtime, não determinável do bytecode",
 
     tbExterno: "Fora do contrato — atores não confiáveis",
-    tbAuth: "require_auth* alcançável em algum caminho — quem autoriza (chamador vs. admin) não é derivável",
+    tbAuth: "require_auth* alcançável em algum caminho — controle de acesso (forma administrativa) e autoautorização (o chamador autorizando o próprio endereço) estão os dois aqui; a separação por forma do nome está na lacuna de Spoofing do threat model",
     tbAberto: (forca: string) => `Sem fronteira de autorização — nenhum caminho alcança require_auth* neste módulo (${forca})`,
     forcaSolida: "sólida para este call graph",
     forcaNaoSolida: (razao: string) => `NÃO sólida: ${razao}`,

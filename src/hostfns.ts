@@ -152,4 +152,19 @@ export const CRYPTO_VERIFY_FNS = named(
   "recover_key_ecdsa_secp256k1",
 );
 
+/**
+ * Verificação de assinatura MAIS os hashes de domínio/mensagem. É o conjunto que indica
+ * um verificador artesanal (EIP-712-like, permit assinado, smart account): quem checa
+ * assinatura no contrato quase sempre também monta o digest com `compute_hash_*`.
+ * Separado de `CRYPTO_VERIFY_FNS` porque hash sozinho não é verificação — aqui o conjunto
+ * é o GATILHO de uma leitura de spec, não a afirmação de que há verificação.
+ */
+export const SIG_SCHEME_FNS = named(
+  "verify_sig_ed25519",
+  "verify_sig_ecdsa_secp256r1",
+  "recover_key_ecdsa_secp256k1",
+  "compute_hash_sha256",
+  "compute_hash_keccak256",
+);
+
 export const PRNG_FNS = byCategory("prng");

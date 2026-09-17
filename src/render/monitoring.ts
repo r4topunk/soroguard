@@ -26,6 +26,7 @@ import type { Finding } from "../detect.ts";
 import { deriveMonitors, toExecutable, threatsSemObservavel, monitorAttribution, monitorFilterArity, lacuna } from "../monitors.ts";
 import { validateMonitoringPlan } from "../validate.ts";
 import { requiresAuth, writesStorage, emitsEvent, callsOut } from "../analyze.ts";
+import { declaracaoDeJanela } from "../events.ts";
 import { lang, msgs, plural } from "../i18n.ts";
 
 const M = msgs({
@@ -196,6 +197,7 @@ const M = msgs({
     submetivel:
       "**Ready to submit:** every monitor traces back to a threat, every baseline either comes from observation or declares the gap, and no field was filled with generic text.",
     naoSubmeter: "**Do not submit without closing these points:**",
+    tituloInput: "### Input the team must provide before submitting",
     documentoVivo:
       "Treat this plan as a living document: review it whenever the contracts, the addresses or the threat model change.",
   },
@@ -348,6 +350,7 @@ const M = msgs({
     submetivel:
       "**Pronto para submissão:** todo monitor rastreia até uma ameaça, todo baseline vem de observação ou declara a lacuna, e nenhum campo foi preenchido com genérico.",
     naoSubmeter: "**Não submeter sem fechar estes pontos:**",
+    tituloInput: "### Input the team must provide before submitting",
     documentoVivo:
       "Trate este plano como documento vivo: revise sempre que os contratos, os endereços ou o threat model mudarem.",
   },
@@ -471,6 +474,13 @@ export function renderMonitoringPlan(ctx: ArtifactContext): string {
   if (ctx.observations) {
     const w = ctx.observations.window;
     const janela = M.janelaObservada(w.ledgers, w.approxHours >= 10 ? w.approxHours.toFixed(0) : w.approxHours.toFixed(2), w.fromLedger, w.toLedger);
+    // O número sozinho engana: 32 h e 375 h têm a mesma cara, e a janela curta é
+    // sistematicamente a do contrato MAIS movimentado — aquele em que o baseline mais
+    // importa. Declarar QUEM fechou a janela é o que impede ler "32 h" como "parado".
+    if (ctx.spec.windowLimitedBy) {
+      p(declaracaoDeJanela(w.ledgers, w.approxHours, ctx.spec.windowLimitedBy));
+      p();
+    }
     const declarados = new Set(ctx.spec.events.map((e) => e.prefixTopics[0]).filter(Boolean));
     const vistos = [...ctx.observations.events].sort((a, b) => b.count - a.count);
     if (!vistos.length) {
@@ -670,12 +680,19 @@ export function renderMonitoringPlan(ctx: ArtifactContext): string {
   p("|---|---|---|");
   for (const it of rel.items) p(linha(it.question, it.status === "ok" ? M.ok : it.status === "gap" ? M.gap : "n/a", it.detail));
   p();
-  if (rel.submittable) {
+  const input = rel.needsInput ?? [];
+  if (rel.verdict === "submittable" || (rel.verdict === undefined && rel.submittable)) {
     p(M.submetivel);
-  } else {
+  } else if (rel.blockers.length) {
     p(M.naoSubmeter);
     p();
     for (const b of rel.blockers) p(`- ${b}`);
+  }
+  if (input.length) {
+    p();
+    p(M.tituloInput);
+    p();
+    input.forEach((b, i) => p(`${i + 1}. ${b}`));
   }
   p();
   p(M.documentoVivo);

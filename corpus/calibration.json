@@ -1,7 +1,7 @@
 {
  "contracts": 71,
  "entrypoints": 1726,
- "totalFindings": 145,
+ "totalFindings": 164,
  "unsound": 22,
  "byClass": [
   [
@@ -13,12 +13,20 @@
    48
   ],
   [
-   "unauthenticated-state-mutation",
-   17
+   "third-party-state-tampering",
+   7
+  ],
+  [
+   "self-implemented-signature-verification",
+   13
   ],
   [
    "vulnerable-sdk",
-   32
+   38
+  ],
+  [
+   "unauthenticated-state-mutation",
+   10
   ],
   [
    "archival-risk",
@@ -50,7 +58,7 @@
    "findings": 7,
    "sound": "sound",
    "classes": [
-    "unauthenticated-state-mutation",
+    "third-party-state-tampering",
     "initialization-front-running",
     "silent-mutation"
    ]
@@ -58,19 +66,21 @@
   {
    "id": "CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV",
    "eps": 34,
-   "findings": 1,
+   "findings": 2,
    "sound": "approximate",
    "classes": [
-    "silent-mutation"
+    "silent-mutation",
+    "self-implemented-signature-verification"
    ]
   },
   {
    "id": "CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL",
    "eps": 51,
-   "findings": 1,
+   "findings": 2,
    "sound": "approximate",
    "classes": [
-    "silent-mutation"
+    "silent-mutation",
+    "self-implemented-signature-verification"
    ]
   },
   {
@@ -86,11 +96,13 @@
   {
    "id": "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
    "eps": 27,
-   "findings": 4,
+   "findings": 5,
    "sound": "approximate",
    "classes": [
+    "third-party-state-tampering",
     "unauthenticated-state-mutation",
-    "silent-mutation"
+    "silent-mutation",
+    "vulnerable-sdk"
    ]
   },
   {
@@ -100,7 +112,7 @@
    "sound": "approximate",
    "classes": [
     "initialization-front-running",
-    "unauthenticated-state-mutation",
+    "third-party-state-tampering",
     "silent-mutation",
     "vulnerable-sdk"
    ]
@@ -117,9 +129,11 @@
   {
    "id": "CB4YHF4ESRJ4XZRXISLXSUZTYY6YPBPZ73MZWSTUWY46DKYW7IGLHGF7",
    "eps": 8,
-   "findings": 0,
+   "findings": 1,
    "sound": "sound",
-   "classes": []
+   "classes": [
+    "vulnerable-sdk"
+   ]
   },
   {
    "id": "CBBMQBNHB2FYVZYV7VNHOJHUMTFJLR4PUMRVQYNW6RHIKZO2NQMIBUCV",
@@ -144,10 +158,11 @@
   {
    "id": "CBIJBDNZNF4X35BJ4FFZWCDBSCKOP5NB4PLG4SNENRMLAPYG4P5FM6VN",
    "eps": 36,
-   "findings": 1,
+   "findings": 2,
    "sound": "sound",
    "classes": [
-    "silent-mutation"
+    "silent-mutation",
+    "vulnerable-sdk"
    ]
   },
   {
@@ -163,10 +178,11 @@
   {
    "id": "CBOOCGZSVRSZFRE4U2NWR2B4RXYVJWRCBTGOUD2JPI2TDJPWMTJX7FZP",
    "eps": 23,
-   "findings": 1,
+   "findings": 2,
    "sound": "sound",
    "classes": [
-    "silent-mutation"
+    "silent-mutation",
+    "vulnerable-sdk"
    ]
   },
   {
@@ -209,10 +225,11 @@
   {
    "id": "CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T",
    "eps": 23,
-   "findings": 1,
+   "findings": 2,
    "sound": "approximate",
    "classes": [
-    "silent-mutation"
+    "silent-mutation",
+    "self-implemented-signature-verification"
    ]
   },
   {
@@ -236,11 +253,12 @@
   {
    "id": "CCG5EWFY2KCWWYYEIUMIRG6WSAQFLDR5QE5FMCWY25N36XA5GYTCPQWR",
    "eps": 43,
-   "findings": 3,
+   "findings": 4,
    "sound": "approximate",
    "classes": [
     "initialization-front-running",
     "silent-mutation",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },
@@ -259,7 +277,7 @@
    "findings": 7,
    "sound": "sound",
    "classes": [
-    "unauthenticated-state-mutation",
+    "third-party-state-tampering",
     "initialization-front-running",
     "silent-mutation"
    ]
@@ -307,11 +325,12 @@
   {
    "id": "CDFQDDPUPAM3XPGORHDOEFRNLMKOH3N3X6XTXNLSXJQXIU3RVCM3OPEP",
    "eps": 15,
-   "findings": 3,
+   "findings": 4,
    "sound": "sound",
    "classes": [
     "initialization-front-running",
     "silent-mutation",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },
@@ -336,9 +355,11 @@
   {
    "id": "CDZK3J2WHJZCOBYQGSZLO5A5JQPBME7FS7XUUOXLH6ZXJI54OI7VGKL2",
    "eps": 9,
-   "findings": 0,
+   "findings": 1,
    "sound": "sound",
-   "classes": []
+   "classes": [
+    "self-implemented-signature-verification"
+   ]
   },
   {
    "id": "CDZLY4F55MKMF2VYGH7WUG2L3G7LHAPQZVXB26I3NRPWRNLSIG252M4J",
@@ -488,9 +509,11 @@
   {
    "id": "CDZUARXOX4VR52D7IDPHWNGJLCLCCCT34S7RXUBTHQK5TYNM2JJOZ24H",
    "eps": 16,
-   "findings": 0,
+   "findings": 1,
    "sound": "sound",
-   "classes": []
+   "classes": [
+    "vulnerable-sdk"
+   ]
   },
   {
    "id": "CDZUVTDHSJWR2R72ROKLAQ6UQNAC76LRC7NEEDFDZVOKYBKO3EZQ6HUN",
@@ -551,11 +574,13 @@
   {
    "id": "CDZWKWCUR3EFLM232U7XJAL57ANBPYDXPXKEWVKPBBPM6D4VVDCFO6O2",
    "eps": 12,
-   "findings": 2,
+   "findings": 4,
    "sound": "sound",
    "classes": [
     "silent-mutation",
-    "archival-risk"
+    "archival-risk",
+    "self-implemented-signature-verification",
+    "vulnerable-sdk"
    ]
   },
   {
@@ -617,10 +642,11 @@
   {
    "id": "CDZY62OKIPJAB4HH44BI6PPYO4NGFQV7INDJH4KU6V6RNNSLCTUX3SCS",
    "eps": 15,
-   "findings": 2,
+   "findings": 3,
    "sound": "sound",
    "classes": [
     "silent-mutation",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },
@@ -643,21 +669,23 @@
   {
    "id": "CDZYURXE4FQUWQDFLON3TO5HI5HSRX6LH5XQNM3DI5U7ZNLMRMZECMTU",
    "eps": 3,
-   "findings": 2,
+   "findings": 3,
    "sound": "sound",
    "classes": [
     "silent-mutation",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },
   {
    "id": "CDZYWZKRHHCR4CNUEE473WGLNMU5RDWSN4JANDJOADCZ765TM5VQIIOQ",
    "eps": 12,
-   "findings": 3,
+   "findings": 4,
    "sound": "sound",
    "classes": [
     "silent-mutation",
     "archival-risk",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },
@@ -673,27 +701,31 @@
   {
    "id": "CDZZBYKYOIH7PBRQ4X6I6B5XQ2364U2RWMSZ24PCLMXBWSDBBKSTCDWM",
    "eps": 51,
-   "findings": 2,
+   "findings": 3,
    "sound": "sound",
    "classes": [
     "initialization-front-running",
-    "silent-mutation"
+    "silent-mutation",
+    "self-implemented-signature-verification"
    ]
   },
   {
    "id": "CDZZCDIGTTUJFYNX56L3MGV54GM26MTXVA2FUW4J7VQIE53QUMKGSWSA",
    "eps": 13,
-   "findings": 0,
+   "findings": 1,
    "sound": "sound",
-   "classes": []
+   "classes": [
+    "self-implemented-signature-verification"
+   ]
   },
   {
    "id": "CDZZM7RQ6AIVNQFTRUNJ36RJRZNJOTYEWJX44GJUDIBPXXQSXEJYLNH6",
    "eps": 6,
-   "findings": 2,
+   "findings": 3,
    "sound": "approximate",
    "classes": [
     "write-before-auth",
+    "self-implemented-signature-verification",
     "vulnerable-sdk"
    ]
   },

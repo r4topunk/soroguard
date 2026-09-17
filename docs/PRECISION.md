@@ -1,4 +1,28 @@
-# Measured precision — the `unauthenticated-state-mutation` detector against source
+# Measured precision and recall
+
+Three measurements so far, all read-only, all against public source at the commit matching the deployed WASM or against unsigned on-chain probes. The first two are on the calibration corpus and cover one detector; the third is on the 25 most-invoked code hashes of mainnet and covers every detector. Detail for the third is in `PRECISION-TOP25.md`.
+
+| Measurement | Sample | Findings triaged | Real unauth. mutation | Loss of funds today | False tier-A claims |
+|---|---|---|---|---|---|
+| Batch 1 (2026-09-16) | 8 calibration contracts | 15 | 0 / 15 | 0 | 0 |
+| Batch 2 (2026-09-16) | 9 calibration contracts | 11 | 5 / 11 | 0 on the triaged instances | 0 |
+| Top 25 by volume (2026-09-17) | busiest 25 code hashes | 66 (all classes) | 0 / 7 | 0 / 66 | 0 |
+
+The pattern across the three: the missing-authorization detector finds real cases only in small, low-traffic contracts (demo dApps, dormant wallets, contracts with no owner model); at the top of mainnet it finds design, not bugs. In every batch, every negative claim ("does not reach `require_auth`") matched the source. The value of the tool on busy code is the inventory, the data-flow diagram, the declared gaps and the refusal to invent a baseline.
+
+## Recall — what the tool missed, first evidence (top 25)
+
+| Missed | Class it belongs to | Status |
+|---|---|---|
+| 6 `vulnerable-sdk` findings lost because the parser kept only the last of two `contractmetav0` sections | SDK exposure | fixed 2026-09-17; declared rate on the corpus went from 38 to 69 of 71 |
+| Permissionless one-shot entrypoint that writes into a third party's record, filed under Elevation with the wrong severity | third-party state tampering (Tamper) | new detector 2026-09-17 |
+| EIP-712-style verifier implemented inside the contract, invisible to a detector that only looks for `require_auth` | self-implemented signature verification (Spoof) | new detector 2026-09-17; 13 corpus contracts moved from gap to issue |
+
+Recall on a labelled corpus (the Audit Bank's public reports) is still the measurement that is missing.
+
+---
+
+# Batch 1 and 2 detail — the `unauthenticated-state-mutation` detector against source
 
 Date of triage: 2026-09-16. Method: read-only. Every finding the detector emitted on a sample of the mainnet corpus was checked one by one against the contract's public source at the commit matching the deployed WASM (spec, SDK version and, where available, the on-chain WASM hash), and where source was unavailable, against read-only on-chain probes (`getLedgerEntries`, unsigned `simulateTransaction`).
 

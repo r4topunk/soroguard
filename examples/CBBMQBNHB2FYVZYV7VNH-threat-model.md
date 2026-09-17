@@ -37,128 +37,132 @@ One asymmetry changes how everything below reads: **"does not reach `require_aut
 
 96 exported, 96 invocable entrypoints · 38 reach `require_auth*` · 53 reach storage write · 25 reach `call`/`try_call` · 1 reaches self-code replacement. No `__*` export, so the two counts coincide.
 
-| Entrypoint | auth | writes | event | upgrade | cross-call | fanout |
-|---|---|---|---|---|---|---|
-| `adjust_total_accumulated_reward` | yes | yes | no | no | no | 98 |
-| `admin_set_rewards_state` | yes | yes | no | no | yes | 138 |
-| `apply_transfer_ownership` | yes | yes | yes | no | no | 48 |
-| `apply_upgrade` | yes | yes | yes | yes | yes | 59 |
-| `backfill_plane_data` | no | no | no | no | yes | 119 |
-| `claim` | yes | yes | yes | no | yes | 143 |
-| `claim_all_position_fees` | yes | yes | yes | no | yes | 155 |
-| `claim_position_fees` | yes | yes | yes | no | yes | 155 |
-| `claim_protocol_fees` | yes | yes | yes | no | yes | 51 |
-| `commit_transfer_ownership` | yes | yes | yes | no | no | 48 |
-| `commit_upgrade` | yes | yes | yes | no | no | 47 |
-| `contract_name` | no | no | no | no | no | 4 |
-| `deposit` | yes | yes | yes | no | yes | 256 |
-| `deposit_position` | yes | yes | yes | no | yes | 256 |
-| `estimate_deposit` | no | no | no | no | no | 95 |
-| `estimate_deposit_position` | no | no | no | no | no | 95 |
-| `estimate_swap` | no | yes | no | no | no | 165 |
-| `estimate_swap_strict_receive` | no | yes | no | no | no | 165 |
-| `estimate_withdraw_position` | no | no | no | no | no | 99 |
-| `estimate_working_balance` | no | yes | no | no | yes | 86 |
-| `gauge_add` | yes | yes | yes | no | yes | 45 |
-| `gauge_remove` | yes | yes | yes | no | no | 39 |
-| `gauge_schedule_reward` | yes | yes | yes | no | yes | 53 |
-| `gauges_claim` | yes | yes | yes | no | yes | 75 |
-| `gauges_get_reward_info` | no | yes | no | no | yes | 79 |
-| `get_active_liquidity` | no | no | no | no | no | 22 |
-| `get_all_position_fees` | no | no | no | no | no | 78 |
-| `get_chunk_bitmap` | no | no | no | no | no | 18 |
-| `get_chunk_bitmap_batch` | no | no | no | no | no | 20 |
-| `get_emergency_mode` | no | no | no | no | no | 14 |
-| `get_fee_fraction` | no | no | no | no | no | 19 |
-| `get_fee_growth_global_0_x128` | no | no | no | no | no | 18 |
-| `get_fee_growth_global_1_x128` | no | no | no | no | no | 18 |
-| `get_future_address` | no | no | no | no | no | 20 |
-| `get_gauges` | no | no | no | no | no | 16 |
-| `get_info` | no | no | no | no | no | 25 |
-| `get_is_killed_claim` | no | no | no | no | no | 16 |
-| `get_is_killed_deposit` | no | no | no | no | no | 16 |
-| `get_is_killed_swap` | no | no | no | no | no | 16 |
-| `get_pools_plane` | no | no | no | no | no | 17 |
-| `get_position` | no | no | no | no | no | 29 |
-| `get_position_fees` | no | no | no | no | no | 76 |
-| `get_privileged_addrs` | no | no | no | no | no | 23 |
-| `get_protocol_fee_fraction` | no | no | no | no | no | 17 |
-| `get_protocol_fees` | no | no | no | no | no | 23 |
-| `get_reserves` | no | no | no | no | no | 24 |
-| `get_rewards_info` | no | yes | no | no | yes | 119 |
-| `get_rewards_state` | no | no | no | no | no | 20 |
-| `get_slot0` | no | no | no | no | no | 22 |
-| `get_tick` | no | no | no | no | no | 42 |
-| `get_tick_bounds` | no | no | no | no | no | 19 |
-| `get_tick_spacing` | no | no | no | no | no | 19 |
-| `get_ticks_batch` | no | no | no | no | no | 44 |
-| `get_tokens` | no | no | no | no | no | 18 |
-| `get_total_accumulated_reward` | no | yes | no | no | no | 82 |
-| `get_total_claimed_reward` | no | yes | no | no | no | 83 |
-| `get_total_configured_reward` | no | yes | no | no | no | 83 |
-| `get_total_excluded_shares` | no | no | no | no | no | 26 |
-| `get_total_raw_liquidity` | no | no | no | no | no | 22 |
-| `get_total_weighted_liquidity` | no | no | no | no | no | 22 |
-| `get_unused_reward` | no | yes | no | no | yes | 102 |
-| `get_user_position_snapshot` | no | no | no | no | no | 26 |
-| `get_user_reward` | no | yes | no | no | yes | 125 |
-| `get_user_shares` | no | no | no | no | no | 25 |
-| `init_pools_plane` | no | yes | no | no | no | 19 |
-| `initialize` | no | yes | no | no | yes | 152 |
-| `initialize_all` | no | yes | no | no | yes | 165 |
-| `initialize_boost_config` | no | yes | no | no | no | 26 |
-| `initialize_rewards_config` | no | yes | no | no | no | 23 |
-| `kill_claim` | yes | yes | yes | no | no | 34 |
-| `kill_deposit` | yes | yes | yes | no | no | 34 |
-| `kill_gauges_claim` | yes | yes | yes | no | no | 33 |
-| `kill_swap` | yes | yes | yes | no | no | 34 |
-| `pool_type` | no | no | no | no | no | 5 |
-| `return_unused_reward` | yes | yes | no | no | yes | 117 |
-| `revert_transfer_ownership` | yes | yes | yes | no | no | 40 |
-| `revert_upgrade` | yes | yes | yes | no | no | 37 |
-| `set_emergency_mode` | yes | yes | yes | no | no | 30 |
-| `set_pools_plane` | yes | yes | no | no | no | 31 |
-| `set_privileged_addrs` | yes | yes | yes | no | no | 34 |
-| `set_protocol_fee_fraction` | yes | yes | yes | no | no | 34 |
-| `set_reward_boost_config` | yes | yes | no | no | no | 36 |
-| `set_rewards_config` | yes | yes | no | no | no | 97 |
-| `set_rewards_state` | yes | yes | yes | no | yes | 130 |
-| `share_id` | no | no | no | no | no | 2 |
-| `swap` | yes | yes | yes | no | yes | 185 |
-| `swap_strict_receive` | yes | yes | yes | no | yes | 185 |
-| `tick_from_amounts` | no | no | no | no | no | 52 |
-| `unkill_claim` | yes | yes | yes | no | no | 34 |
-| `unkill_deposit` | yes | yes | yes | no | no | 34 |
-| `unkill_gauges_claim` | yes | yes | yes | no | no | 33 |
-| `unkill_swap` | yes | yes | yes | no | no | 34 |
-| `version` | no | no | no | no | no | 1 |
-| `withdraw` | yes | yes | yes | no | yes | 246 |
-| `withdraw_position` | yes | yes | yes | no | yes | 246 |
-| `get_total_shares` | no | no | no | no | no | 22 |
+| Entrypoint | auth | writes | durability | event | upgrade | cross-call | fanout |
+|---|---|---|---|---|---|---|---|
+| `adjust_total_accumulated_reward` | yes | yes | `pers`, `inst` | no | no | no | 98 |
+| `admin_set_rewards_state` | yes | yes | `pers`, `inst` | no | no | yes | 138 |
+| `apply_transfer_ownership` | yes | yes | `inst` | yes | no | no | 48 |
+| `apply_upgrade` | yes | yes | `inst` | yes | yes | yes | 59 |
+| `backfill_plane_data` | no | no | — | no | no | yes | 119 |
+| `claim` | yes | yes | `pers`, `inst` | yes | no | yes | 143 |
+| `claim_all_position_fees` | yes | yes | `pers`, `inst` | yes | no | yes | 155 |
+| `claim_position_fees` | yes | yes | `pers`, `inst` | yes | no | yes | 155 |
+| `claim_protocol_fees` | yes | yes | `inst` | yes | no | yes | 51 |
+| `commit_transfer_ownership` | yes | yes | `inst` | yes | no | no | 48 |
+| `commit_upgrade` | yes | yes | `inst` | yes | no | no | 47 |
+| `contract_name` | no | no | — | no | no | no | 4 |
+| `deposit` | yes | yes | `pers`, `inst` | yes | no | yes | 256 |
+| `deposit_position` | yes | yes | `pers`, `inst` | yes | no | yes | 256 |
+| `estimate_deposit` | no | no | — | no | no | no | 95 |
+| `estimate_deposit_position` | no | no | — | no | no | no | 95 |
+| `estimate_swap` | no | yes | `pers`, `inst` | no | no | no | 165 |
+| `estimate_swap_strict_receive` | no | yes | `pers`, `inst` | no | no | no | 165 |
+| `estimate_withdraw_position` | no | no | — | no | no | no | 99 |
+| `estimate_working_balance` | no | yes | `?` | no | no | yes | 86 |
+| `gauge_add` | yes | yes | `inst` | yes | no | yes | 45 |
+| `gauge_remove` | yes | yes | `inst` | yes | no | no | 39 |
+| `gauge_schedule_reward` | yes | yes | `?` | yes | no | yes | 53 |
+| `gauges_claim` | yes | yes | `pers`, `inst` | yes | no | yes | 75 |
+| `gauges_get_reward_info` | no | yes | `pers`, `inst` | no | no | yes | 79 |
+| `get_active_liquidity` | no | no | — | no | no | no | 22 |
+| `get_all_position_fees` | no | no | — | no | no | no | 78 |
+| `get_chunk_bitmap` | no | no | — | no | no | no | 18 |
+| `get_chunk_bitmap_batch` | no | no | — | no | no | no | 20 |
+| `get_emergency_mode` | no | no | — | no | no | no | 14 |
+| `get_fee_fraction` | no | no | — | no | no | no | 19 |
+| `get_fee_growth_global_0_x128` | no | no | — | no | no | no | 18 |
+| `get_fee_growth_global_1_x128` | no | no | — | no | no | no | 18 |
+| `get_future_address` | no | no | — | no | no | no | 20 |
+| `get_gauges` | no | no | — | no | no | no | 16 |
+| `get_info` | no | no | — | no | no | no | 25 |
+| `get_is_killed_claim` | no | no | — | no | no | no | 16 |
+| `get_is_killed_deposit` | no | no | — | no | no | no | 16 |
+| `get_is_killed_swap` | no | no | — | no | no | no | 16 |
+| `get_pools_plane` | no | no | — | no | no | no | 17 |
+| `get_position` | no | no | — | no | no | no | 29 |
+| `get_position_fees` | no | no | — | no | no | no | 76 |
+| `get_privileged_addrs` | no | no | — | no | no | no | 23 |
+| `get_protocol_fee_fraction` | no | no | — | no | no | no | 17 |
+| `get_protocol_fees` | no | no | — | no | no | no | 23 |
+| `get_reserves` | no | no | — | no | no | no | 24 |
+| `get_rewards_info` | no | yes | `pers`, `inst` | no | no | yes | 119 |
+| `get_rewards_state` | no | no | — | no | no | no | 20 |
+| `get_slot0` | no | no | — | no | no | no | 22 |
+| `get_tick` | no | no | — | no | no | no | 42 |
+| `get_tick_bounds` | no | no | — | no | no | no | 19 |
+| `get_tick_spacing` | no | no | — | no | no | no | 19 |
+| `get_ticks_batch` | no | no | — | no | no | no | 44 |
+| `get_tokens` | no | no | — | no | no | no | 18 |
+| `get_total_accumulated_reward` | no | yes | `pers`, `inst` | no | no | no | 82 |
+| `get_total_claimed_reward` | no | yes | `pers`, `inst` | no | no | no | 83 |
+| `get_total_configured_reward` | no | yes | `pers`, `inst` | no | no | no | 83 |
+| `get_total_excluded_shares` | no | no | — | no | no | no | 26 |
+| `get_total_raw_liquidity` | no | no | — | no | no | no | 22 |
+| `get_total_weighted_liquidity` | no | no | — | no | no | no | 22 |
+| `get_unused_reward` | no | yes | `pers`, `inst` | no | no | yes | 102 |
+| `get_user_position_snapshot` | no | no | — | no | no | no | 26 |
+| `get_user_reward` | no | yes | `pers`, `inst` | no | no | yes | 125 |
+| `get_user_shares` | no | no | — | no | no | no | 25 |
+| `init_pools_plane` | no | yes | `inst` | no | no | no | 19 |
+| `initialize` | no | yes | `inst` | no | no | yes | 152 |
+| `initialize_all` | no | yes | `inst` | no | no | yes | 165 |
+| `initialize_boost_config` | no | yes | `inst` | no | no | no | 26 |
+| `initialize_rewards_config` | no | yes | `inst` | no | no | no | 23 |
+| `kill_claim` | yes | yes | `inst` | yes | no | no | 34 |
+| `kill_deposit` | yes | yes | `inst` | yes | no | no | 34 |
+| `kill_gauges_claim` | yes | yes | `inst` | yes | no | no | 33 |
+| `kill_swap` | yes | yes | `inst` | yes | no | no | 34 |
+| `pool_type` | no | no | — | no | no | no | 5 |
+| `return_unused_reward` | yes | yes | `pers`, `inst` | no | no | yes | 117 |
+| `revert_transfer_ownership` | yes | yes | `inst` | yes | no | no | 40 |
+| `revert_upgrade` | yes | yes | `inst` | yes | no | no | 37 |
+| `set_emergency_mode` | yes | yes | `inst` | yes | no | no | 30 |
+| `set_pools_plane` | yes | yes | `inst` | no | no | no | 31 |
+| `set_privileged_addrs` | yes | yes | `inst` | yes | no | no | 34 |
+| `set_protocol_fee_fraction` | yes | yes | `inst` | yes | no | no | 34 |
+| `set_reward_boost_config` | yes | yes | `inst` | no | no | no | 36 |
+| `set_rewards_config` | yes | yes | `pers`, `inst` | no | no | no | 97 |
+| `set_rewards_state` | yes | yes | `pers`, `inst` | yes | no | yes | 130 |
+| `share_id` | no | no | — | no | no | no | 2 |
+| `swap` | yes | yes | `pers`, `inst` | yes | no | yes | 185 |
+| `swap_strict_receive` | yes | yes | `pers`, `inst` | yes | no | yes | 185 |
+| `tick_from_amounts` | no | no | — | no | no | no | 52 |
+| `unkill_claim` | yes | yes | `inst` | yes | no | no | 34 |
+| `unkill_deposit` | yes | yes | `inst` | yes | no | no | 34 |
+| `unkill_gauges_claim` | yes | yes | `inst` | yes | no | no | 33 |
+| `unkill_swap` | yes | yes | `inst` | yes | no | no | 34 |
+| `version` | no | no | — | no | no | no | 1 |
+| `withdraw` | yes | yes | `pers`, `inst` | yes | no | yes | 246 |
+| `withdraw_position` | yes | yes | `pers`, `inst` | yes | no | yes | 246 |
+| `get_total_shares` | no | no | — | no | no | no | 22 |
 
 In every column, "yes" means it **reaches** the corresponding host function on some call-graph path, not that it always executes it.
+
+**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` (`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, so a literal at the call site is that argument by construction. The three durabilities are not interchangeable — a `Temporary` entry is deleted permanently when it expires and CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on every invocation. `?` means the entrypoint writes but the storage type reaches the call computed, typically through a generic helper that takes durability as a parameter; `—` means no write is reached. Read literally at 52 of 56 storage call sites in this module. This column is a description of the contract's storage layout, not a finding: each durability is correct for some data and wrong for other data, and which one this contract holds is not derivable from the bytecode.
 
 ### Inferred data stores
 
 - Likely keys (partial read of the data section): `ChunkBitmap`, `ClaimKilled`, `Fee`, `FeeGrowthGlobal0X128`, `FeeGrowthGlobal1X128`, `FullRangeLiquidity`, `GaugeFutureWasm`, `IsKilledDeposit`, `IsKilledSwap`, `Liquidity`, `MaxInitTick`, `MinInitTick`, `Plane`, `Position`, `ProtocolFeeFraction`, `ProtocolFees`, `Reserve0`, `Reserve1`, `Router`, `Slot0` and 9 more.
 
-The durability of each key (`temporary` / `persistent` / `instance`) is a runtime argument and **does not appear in the bytecode** — do not assume it from this list.
+Durability is **not** attributable to a key from this list. The `StorageType` is readable per call site (see the `durability` column above), but pairing *which key* goes to *which durability* needs dataflow from the key to the call, which this analysis does not do — a single entrypoint routinely writes several keys at different durabilities. Do not assume the durability of any key below.
 
 ### On-chain activity observed (tier B)
 
-Window: ledgers 64448409–64466075 (17667 ledgers, ~27.2h).
+Window: ledgers 64427432–64467591 (40160 ledgers, ~61.76h).
+
+window of 40160 ledgers (~62 h) — limited by the RPC request budget, not by retention: the collector could not page the whole retained range in the time allowed, and the contracts that emit most events hit this first; baselines are rates over the observed slice, not totals.
 
 | Topic | Occurrences | Ledgers | Events/hour |
 |---|---|---|---|
-| `update_reserves` | 4688 | 64448416–64466048 | 172.334 |
-| `pool_state` | 4667 | 64448416–64466048 | 171.562 |
-| `trade` | 4661 | 64448416–64466048 | 171.342 |
-| `claim_fees` | 23 | 64452333–64465889 | 0.845 |
-| `claim_reward` | 18 | 64452374–64465888 | 0.662 |
-| `position_update` | 6 | 64450482–64463357 | 0.221 |
-| `deposit_liquidity` | 4 | 64450482–64463357 | 0.147 |
-| `claim_protocol_fee` | 2 | 64451449–64451449 | 0.074 |
-| `withdraw_liquidity` | 2 | 64455285–64463340 | 0.074 |
+| `update_reserves` | 14149 | 64427434–64467590 | 229.104 |
+| `pool_state` | 14075 | 64427434–64467590 | 227.906 |
+| `trade` | 14062 | 64427434–64467590 | 227.695 |
+| `claim_fees` | 77 | 64427653–64465889 | 1.247 |
+| `claim_reward` | 66 | 64428580–64465888 | 1.069 |
+| `position_update` | 13 | 64428597–64463357 | 0.21 |
+| `deposit_liquidity` | 9 | 64428668–64463357 | 0.146 |
+| `withdraw_liquidity` | 4 | 64428597–64463340 | 0.065 |
+| `claim_protocol_fee` | 2 | 64451449–64451449 | 0.032 |
 
 ### Data flow diagram
 
@@ -174,7 +178,7 @@ flowchart LR
     e_autorizado["Authenticated invoker — Address required by require_auth* on at least one reachable path"]
     e_observador["Off-chain consumer of the event stream — getEvents"]
   end
-  subgraph tb_auth["require_auth* reachable on some path — who is authorized (caller vs. admin) is not derivable"]
+  subgraph tb_auth["require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap"]
     p_adjust_total_accumulated_reward(["adjust_total_accumulated_reward — reaches (hops to host fn): require_auth 1, read 4†, write 2 ⚠ † = via shared helper, tier C"])
     p_admin_set_rewards_state(["admin_set_rewards_state — reaches (hops to host fn): require_auth 1, read 3†, write 2, cross-call 2 ⚠ † = via shared helper, tier C"])
     p_apply_transfer_ownership(["apply_transfer_ownership — reaches (hops to host fn): require_auth 2, read 2, write 2, event 1"])
@@ -595,11 +599,11 @@ The diagram comes straight out of the analysis: each `process` is a module expor
 | Trust boundary | Contained nodes |
 |---|---|
 | Outside the contract — untrusted actors | `e_anonimo`, `e_autorizado`, `e_observador` |
-| require_auth* reachable on some path — who is authorized (caller vs. admin) is not derivable | `p_adjust_total_accumulated_reward`, `p_admin_set_rewards_state`, `p_apply_transfer_ownership`, `p_apply_upgrade`, `p_claim`, `p_claim_all_position_fees`, `p_claim_position_fees`, `p_claim_protocol_fees`, `p_commit_transfer_ownership`, `p_commit_upgrade`, `p_deposit`, `p_deposit_position`, `p_gauge_add`, `p_gauge_remove`, `p_gauge_schedule_reward`, `p_gauges_claim`, `p_kill_claim`, `p_kill_deposit`, `p_kill_gauges_claim`, `p_kill_swap`, `p_return_unused_reward`, `p_revert_transfer_ownership`, `p_revert_upgrade`, `p_set_emergency_mode`, `p_set_pools_plane`, `p_set_privileged_addrs`, `p_set_protocol_fee_fraction`, `p_set_reward_boost_config`, `p_set_rewards_config`, `p_set_rewards_state`, `p_swap`, `p_swap_strict_receive`, `p_unkill_claim`, `p_unkill_deposit`, `p_unkill_gauges_claim`, `p_unkill_swap`, `p_withdraw`, `p_withdraw_position` |
+| require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap | `p_adjust_total_accumulated_reward`, `p_admin_set_rewards_state`, `p_apply_transfer_ownership`, `p_apply_upgrade`, `p_claim`, `p_claim_all_position_fees`, `p_claim_position_fees`, `p_claim_protocol_fees`, `p_commit_transfer_ownership`, `p_commit_upgrade`, `p_deposit`, `p_deposit_position`, `p_gauge_add`, `p_gauge_remove`, `p_gauge_schedule_reward`, `p_gauges_claim`, `p_kill_claim`, `p_kill_deposit`, `p_kill_gauges_claim`, `p_kill_swap`, `p_return_unused_reward`, `p_revert_transfer_ownership`, `p_revert_upgrade`, `p_set_emergency_mode`, `p_set_pools_plane`, `p_set_privileged_addrs`, `p_set_protocol_fee_fraction`, `p_set_reward_boost_config`, `p_set_rewards_config`, `p_set_rewards_state`, `p_swap`, `p_swap_strict_receive`, `p_unkill_claim`, `p_unkill_deposit`, `p_unkill_gauges_claim`, `p_unkill_swap`, `p_withdraw`, `p_withdraw_position` |
 | No authorization boundary — no path reaches require_auth* in this module (sound for this call graph) | `p_backfill_plane_data`, `p_contract_name`, `p_estimate_deposit`, `p_estimate_deposit_position`, `p_estimate_swap`, `p_estimate_swap_strict_receive`, `p_estimate_withdraw_position`, `p_estimate_working_balance`, `p_gauges_get_reward_info`, `p_get_active_liquidity`, `p_get_all_position_fees`, `p_get_chunk_bitmap`, `p_get_chunk_bitmap_batch`, `p_get_emergency_mode`, `p_get_fee_fraction`, `p_get_fee_growth_global_0_x128`, `p_get_fee_growth_global_1_x128`, `p_get_future_address`, `p_get_gauges`, `p_get_info`, `p_get_is_killed_claim`, `p_get_is_killed_deposit`, `p_get_is_killed_swap`, `p_get_pools_plane`, `p_get_position`, `p_get_position_fees`, `p_get_privileged_addrs`, `p_get_protocol_fee_fraction`, `p_get_protocol_fees`, `p_get_reserves`, `p_get_rewards_info`, `p_get_rewards_state`, `p_get_slot0`, `p_get_tick`, `p_get_tick_bounds`, `p_get_tick_spacing`, `p_get_ticks_batch`, `p_get_tokens`, `p_get_total_accumulated_reward`, `p_get_total_claimed_reward`, `p_get_total_configured_reward`, `p_get_total_excluded_shares`, `p_get_total_raw_liquidity`, `p_get_total_weighted_liquidity`, `p_get_unused_reward`, `p_get_user_position_snapshot`, `p_get_user_reward`, `p_get_user_shares`, `p_init_pools_plane`, `p_initialize`, `p_initialize_all`, `p_initialize_boost_config`, `p_initialize_rewards_config`, `p_pool_type`, `p_share_id`, `p_tick_from_amounts`, `p_version`, `p_get_total_shares` |
 | Third-party code — reached through call/try_call | `x_callee` |
 
-**How to read the authorization boundary (tier C, name-shape heuristic).** Reaching `require_auth*` is not by itself access control. On the 20 user-shaped nodes (`adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more) it is the caller authorizing their own address — the expected shape of a user operation, with no privileged key behind it. Only the 18 admin-shaped nodes (`admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more) sit behind a key holder whose custody the review has to trace. The split comes from the name, not from the bytecode: the call graph never shows *whose* `Address` is authorized.
+**How to read the authorization boundary (tier C, name-shape heuristic).** The boundary says only that `require_auth*` is reachable, and that single label covers two different mechanisms. **Access control** — 18 admin-shaped nodes (`admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more): there the authorized `Address` is a privileged role, and the review has to trace its custody (multisig or a single key). **Self-authorization** — 20 user-shaped nodes (`adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more): there `require_auth` is the caller authorizing their own address, the expected shape of a user operation (`swap`, `deposit`, `withdraw`), with no privileged key behind it and nothing to trace. Reading the whole boundary as access control overstates it; reading it as self-authorization understates it. The split comes from the name, not from the bytecode: the call graph never shows *whose* `Address` is authorized.
 
 ---
 
@@ -616,15 +620,15 @@ The diagram comes straight out of the analysis: each `process` is a module expor
 | **D**enial of Service | The ability for an attacker to negatively affect the availability of a system. | Can someone, without authorization, impact the availability of the service or business? |
 | **E**levation of Privilege | The ability for an attacker to gain additional privileges and roles beyond what they initially were granted. | Are there ways for a user, without proper authentication and authorization to gain access to additional privileges, either through standard or illegitimate means? |
 
-6 derived threats — 6 Medium. 5 are flagged for human confirmation before counting as a finding. 4 letters have no derivable finding and are declared below as a gap.
+6 derived threats — 1 High, 5 Medium. 5 are flagged for human confirmation before counting as a finding. 4 letters have no derivable finding and are declared below as a gap.
 
 ### Threat table
 
 | Threat | Issues |
 |---|---|
-| **S**poofing | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. Requires manual review of the off-chain flow: custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. Where identity is asserted in this contract: 38 invocable entrypoints reach `require_auth*`. Admin-shaped (18, key-holder trace required): `admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more — those are the calls whose `Address` the review has to trace back to a key holder: custody, multisig or a single key. User-shaped (20, no key-holder trace): `adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more — there `require_auth` is the caller authorizing their own address, which is the expected shape of a user operation, not access control; there is no privileged key behind it to trace. This split is a name-shape heuristic (tier C), not a bytecode fact — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's. |
+| **S**poofing | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. Requires manual review of the off-chain flow: custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. Where identity is asserted in this contract: 38 invocable entrypoints reach `require_auth*`. Access control (18 admin-shaped, key-holder trace required): `admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more — those are the calls whose `Address` is a privileged role and has to be traced back to a key holder: custody, multisig or a single key. Self-authorization (20 user-shaped, no key-holder trace): `adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more — there `require_auth` is the caller authorizing their own address (`swap`, `deposit`, `withdraw` are the usual shape), which is a user operation, not access control; there is no privileged key behind it to trace. This split is a name-shape heuristic (tier C), not a bytecode fact — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's. |
 | **T**ampering | _No threat derivable from the bytecode._ Declared gap — no finding derived for this contract. Three detectors feed this letter and none fired: `write-before-auth` (compares bytecode offsets *within the same body*), `host-prng-in-value-path` (host PRNG on a path that changes state or calls out) and `vulnerable-sdk` when the advisory is not about authorization. The write-before-auth detector compares offsets *inside a single body* and found no body where a write precedes the first `require_auth`. It cannot see the ordering when the write and the authorization live in different functions, so this is absence of signal, not a demonstration that the ordering is correct. Watch the classification: state tampering through missing authorization lives under Elevation (5 findings), not here. What still requires manual review: validation of the arguments entering the entrypoints, and trust in data coming from another contract (oracle, router) — neither is derivable from reachability. |
-| **R**epudiation | **Repudiate.1** — 11 of 43 state-changing entrypoints emit no event · tiers A+C · severity Medium (C) |
+| **R**epudiation | **Repudiate.1** — 11 of 43 state-changing entrypoints emit no event · tiers A+C · severity High (C) |
 | **I**nformation Disclosure | _No threat derivable from the bytecode._ Declared gap — not derivable from the bytecode. All ledger state in Soroban is public by construction, so "excessive disclosure" is a question about *which data the protocol chose to put on-chain* — a product decision the WASM does not record. The bytecode also does not say what the arguments and the event topics mean. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — a structural limit. Requires manual review: which fields go into storage and into event topics, and whether any of them is data that should not be public or that gives an advantage to whoever reads the ledger before the transaction settles. The concrete surface to review in this contract: inferred storage keys `ChunkBitmap`, `ClaimKilled`, `Fee`, `FeeGrowthGlobal0X128`, `FeeGrowthGlobal1X128`, `FullRangeLiquidity` and 23 more; declared event topics `claim_fees`. Those are the fields that end up readable on a public ledger. |
 | **D**enial of Service | _No threat derivable from the bytecode._ Declared gap — no finding derived for this contract. The detector for this letter is `archival-risk`. 90 exports reach the `extend_*_ttl` family, the nearest at 2 hops (`adjust_total_accumulated_reward`, `admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `backfill_plane_data`, `claim` and 84 more), and the detector only fires when none does. Read that count as an over-approximation: *reaching* is not *executing* — measured on the calibration corpus, ~84% of the bare positives go through a shared helper the entrypoint never runs (`docs/CALIBRACAO.md`), and read-only entrypoints land in this list for exactly that reason. If those renewal paths do not run during the contract's normal operation, the archival risk still exists and the bytecode does not show it. What is not derivable from the call graph: resource exhaustion from large input (ledger CPU/memory limits), dependency on the liveness of a contract reached through `call`, and an administrative `pause`/`kill` able to freeze the system. These require manual review. |
 | **E**levation of Privilege | **Elevation.1** — `init_pools_plane` reaches state initialization without requiring authorization · tiers A+C · severity Medium (C) · ⚠ confirm before treating as a finding<br><br>**Elevation.2** — `initialize` reaches state initialization without requiring authorization · tiers A+C · severity Medium (C) · ⚠ confirm before treating as a finding<br><br>**Elevation.3** — `initialize_all` reaches state initialization without requiring authorization · tiers A+C · severity Medium (C) · ⚠ confirm before treating as a finding<br><br>**Elevation.4** — `initialize_boost_config` reaches state initialization without requiring authorization · tiers A+C · severity Medium (C) · ⚠ confirm before treating as a finding<br><br>**Elevation.5** — `initialize_rewards_config` reaches state initialization without requiring authorization · tiers A+C · severity Medium (C) · ⚠ confirm before treating as a finding |
@@ -639,140 +643,65 @@ The template asks for at least one issue per letter. Letters without a finding a
 |---|---|
 | Class | `silent-mutation` |
 | Target | the whole contract |
-| Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
+| Severity | High — **tier C**, a risk judgement, not a bytecode fact |
 | Soundness | module call graph complete — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
 
 **Evidence**
 
-- **[A]** *(bytecode fact)* — Reach put_contract_data and do not reach contract_event: adjust_total_accumulated_reward, admin_set_rewards_state, init_pools_plane, initialize, initialize_all, initialize_boost_config, initialize_rewards_config, return_unused_reward, set_pools_plane, set_reward_boost_config, set_rewards_config.
+- **[A]** *(bytecode fact)* — Reach put_contract_data and do not reach contract_event: set_reward_boost_config, set_rewards_config, adjust_total_accumulated_reward, admin_set_rewards_state, init_pools_plane, initialize, initialize_all, initialize_boost_config, initialize_rewards_config, return_unused_reward, set_pools_plane.
+- **[A]** *(bytecode fact)* — Of those, upgrade-capable or admin/permission-shaped by name (listed first above): set_reward_boost_config, set_rewards_config.
 - **[C]** *(inference — requires human review)* — 10 read-shaped entrypoints that reach a write through a shared helper were excluded from the count (both numerator and denominator): estimate_swap, estimate_swap_strict_receive, estimate_working_balance, gauges_get_reward_info, get_rewards_info, get_total_accumulated_reward, get_total_claimed_reward, get_total_configured_reward, get_unused_reward, get_user_reward. Emitting events from a quoting getter is not the remediation.
+- **[C]** *(inference — requires human review)* — Severity rule applied (class of the silent action, not the silent/state-changing fraction): High when any silent entrypoint is upgrade-capable or admin/permission-shaped by name; Low when every silent entrypoint is an init-shaped one-shot; Medium otherwise. Here: deciding entrypoints = set_reward_boost_config, set_rewards_config → High.
 - **[C]** *(inference — requires human review)* — Without an event there is no off-chain proof that the action happened, and the change is only detectable by state diff — which makes real-time monitoring of those actions unfeasible.
 
-#### Elevation.1 — `init_pools_plane` reaches state initialization without requiring authorization
+#### Elevation.1 – Elevation.5 — `initialization-front-running` in 5 entrypoints
+
+These 5 findings are the same shape: family `init`, class `initialization-front-running`, one per entrypoint. Repeating the block 5 times would bury the rest of the document without adding a fact, so what differs per entrypoint is in the table below, and the evidence and the remediation they share are stated once. Each ID stays individual: its row is its anchor, and the threat table and the remediations keep every id.
+
+| ID | Entrypoint | Evidence tiers | Severity | Hops to the write | `has_contract_data` | On-chain probe |
+|---|---|---|---|---|---|---|
+| **Elevation.1** | `init_pools_plane` | [A]+[C] | Medium | 4 | reachable | guarded |
+| **Elevation.2** | `initialize` | [A]+[C] | Medium | 3 | reachable | guarded |
+| **Elevation.3** | `initialize_all` | [A]+[C] | Medium | 3 | reachable | guarded |
+| **Elevation.4** | `initialize_boost_config` | [A]+[C] | Medium | 4 | reachable | guarded |
+| **Elevation.5** | `initialize_rewards_config` | [A]+[C] | Medium | 3 | reachable | guarded |
+
+**Per-ID anchors:** `Elevation.1` · `Elevation.2` · `Elevation.3` · `Elevation.4` · `Elevation.5`. Each row above is the anchor for its id — the monitor ids `<ThreatID>.M.<n>` in the monitoring plan resolve to them.
 
 | | |
 |---|---|
 | Class | `initialization-front-running` |
-| Target | entrypoint `init_pools_plane` |
 | Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
-| Soundness | call graph complete in this entrypoint's subgraph — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
+| Soundness | call graph complete in the subgraphs of the listed entrypoints — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
 
-**Evidence**
+**Evidence** — condensed: the reachable set, the hop count and the applied severity rule are per entrypoint and are in the table above. What follows is the evidence the 5 findings share, stated once.
 
-- **[A]** *(bytecode fact)* — export `init_pools_plane`: reachable host functions = {extend_current_contract_instance_and_code_ttl, fail_with_error, has_contract_data, put_contract_data, symbol_new_from_linear_memory, vec_new_from_linear_memory}. Subgraph of 19 functions, call graph complete.
 - **[A]** *(bytecode fact)* — No path reaches require_auth or require_auth_for_args — sound negative.
-- **[A]** *(bytecode fact)* — A path to a storage write exists: 4 hops from the export to put_contract_data/del_contract_data.
 - **[A]** *(bytecode fact)* — `has_contract_data` IS reachable from this export.
 - **[C]** *(inference — requires human review)* — A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability.
-- **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 4 hops → Medium.
-- **[C]** *(inference — requires human review)* — ⚠ REVIEW: the path to the write is 4 hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.
 - **[C]** *(inference — requires human review)* — The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.
 
-> **Tier B/C note.** Observed traffic (14071 events over ~27.2 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `init_pools_plane` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
+**Shared remediation.** The same actions apply to every entrypoint listed; they stay numbered per id, from `Elevation.1.R.1` to `Elevation.5.R.1`, in *What are we going to do about it*.
 
-> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be confirmed in the source of `init_pools_plane` before entering a fix plan. See Elevation.1.R.1.
+> **Tier B/C note.** Observed traffic (42457 events over ~61.76 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `init_pools_plane`, `initialize`, `initialize_all`, `initialize_boost_config` and `initialize_rewards_config` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
 
-#### Elevation.2 — `initialize` reaches state initialization without requiring authorization
+> **Init probe (tier B).**
+>
+> - `init_pools_plane` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #201) = `ConcentratedPoolError::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_all` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_boost_config` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_rewards_config` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+>
+> The front-running window is closed on this instance; residual risk is limited to a future re-deploy of the same code with the same non-atomic initialization.
 
-| | |
-|---|---|
-| Class | `initialization-front-running` |
-| Target | entrypoint `initialize` |
-| Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
-| Soundness | call graph complete in this entrypoint's subgraph — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
-
-**Evidence**
-
-- **[A]** *(bytecode fact)* — export `initialize`: reachable host functions = {bytes_append, bytes_copy_to_linear_memory, bytes_front, bytes_get, bytes_len, bytes_new_from_linear_memory, bytes_slice, call, extend_contract_data_ttl, extend_current_contract_instance_and_code_ttl, fail_with_error, get_contract_data, get_current_contract_address, has_contract_data, map_get, map_has, map_new, map_new_from_linear_memory, map_put, map_unpack_to_linear_memory, obj_cmp, obj_from_u128_pieces, obj_to_i128_hi64, obj_to_i128_lo64, obj_to_u128_hi64, obj_to_u128_lo64, put_contract_data, symbol_new_from_linear_memory, u256_add, u256_div, u256_mul, u256_rem_euclid, u256_shl, u256_shr, u256_sub, u256_val_from_be_bytes, u256_val_to_be_bytes, vec_get, vec_len, vec_new, vec_new_from_linear_memory, vec_push_back, vec_unpack_to_linear_memory}. Subgraph of 152 functions, call graph complete.
-- **[A]** *(bytecode fact)* — No path reaches require_auth or require_auth_for_args — sound negative.
-- **[A]** *(bytecode fact)* — A path to a storage write exists: 3 hops from the export to put_contract_data/del_contract_data.
-- **[A]** *(bytecode fact)* — `has_contract_data` IS reachable from this export.
-- **[C]** *(inference — requires human review)* — A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability.
-- **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 3 hops → Medium.
-- **[C]** *(inference — requires human review)* — ⚠ REVIEW: the path to the write is 3 hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.
-- **[C]** *(inference — requires human review)* — The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.
-
-> **Tier B/C note.** Observed traffic (14071 events over ~27.2 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
-
-> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be confirmed in the source of `initialize` before entering a fix plan. See Elevation.2.R.1.
-
-#### Elevation.3 — `initialize_all` reaches state initialization without requiring authorization
-
-| | |
-|---|---|
-| Class | `initialization-front-running` |
-| Target | entrypoint `initialize_all` |
-| Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
-| Soundness | call graph complete in this entrypoint's subgraph — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
-
-**Evidence**
-
-- **[A]** *(bytecode fact)* — export `initialize_all`: reachable host functions = {bytes_append, bytes_copy_to_linear_memory, bytes_front, bytes_get, bytes_len, bytes_new_from_linear_memory, bytes_slice, call, extend_contract_data_ttl, extend_current_contract_instance_and_code_ttl, fail_with_error, get_contract_data, get_current_contract_address, has_contract_data, map_get, map_has, map_new, map_new_from_linear_memory, map_put, map_unpack_to_linear_memory, obj_cmp, obj_from_u128_pieces, obj_from_u64, obj_to_i128_hi64, obj_to_i128_lo64, obj_to_u128_hi64, obj_to_u128_lo64, put_contract_data, symbol_new_from_linear_memory, u256_add, u256_div, u256_mul, u256_rem_euclid, u256_shl, u256_shr, u256_sub, u256_val_from_be_bytes, u256_val_to_be_bytes, vec_get, vec_len, vec_new, vec_new_from_linear_memory, vec_push_back, vec_unpack_to_linear_memory}. Subgraph of 165 functions, call graph complete.
-- **[A]** *(bytecode fact)* — No path reaches require_auth or require_auth_for_args — sound negative.
-- **[A]** *(bytecode fact)* — A path to a storage write exists: 3 hops from the export to put_contract_data/del_contract_data.
-- **[A]** *(bytecode fact)* — `has_contract_data` IS reachable from this export.
-- **[C]** *(inference — requires human review)* — A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability.
-- **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 3 hops → Medium.
-- **[C]** *(inference — requires human review)* — ⚠ REVIEW: the path to the write is 3 hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.
-- **[C]** *(inference — requires human review)* — The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.
-
-> **Tier B/C note.** Observed traffic (14071 events over ~27.2 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize_all` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
-
-> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be confirmed in the source of `initialize_all` before entering a fix plan. See Elevation.3.R.1.
-
-#### Elevation.4 — `initialize_boost_config` reaches state initialization without requiring authorization
-
-| | |
-|---|---|
-| Class | `initialization-front-running` |
-| Target | entrypoint `initialize_boost_config` |
-| Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
-| Soundness | call graph complete in this entrypoint's subgraph — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
-
-**Evidence**
-
-- **[A]** *(bytecode fact)* — export `initialize_boost_config`: reachable host functions = {extend_current_contract_instance_and_code_ttl, fail_with_error, has_contract_data, map_new, obj_from_u64, put_contract_data, symbol_new_from_linear_memory, vec_new_from_linear_memory}. Subgraph of 26 functions, call graph complete.
-- **[A]** *(bytecode fact)* — No path reaches require_auth or require_auth_for_args — sound negative.
-- **[A]** *(bytecode fact)* — A path to a storage write exists: 4 hops from the export to put_contract_data/del_contract_data.
-- **[A]** *(bytecode fact)* — `has_contract_data` IS reachable from this export.
-- **[C]** *(inference — requires human review)* — A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability.
-- **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 4 hops → Medium.
-- **[C]** *(inference — requires human review)* — ⚠ REVIEW: the path to the write is 4 hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.
-- **[C]** *(inference — requires human review)* — The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.
-
-> **Tier B/C note.** Observed traffic (14071 events over ~27.2 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize_boost_config` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
-
-> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be confirmed in the source of `initialize_boost_config` before entering a fix plan. See Elevation.4.R.1.
-
-#### Elevation.5 — `initialize_rewards_config` reaches state initialization without requiring authorization
-
-| | |
-|---|---|
-| Class | `initialization-front-running` |
-| Target | entrypoint `initialize_rewards_config` |
-| Severity | Medium — **tier C**, a risk judgement, not a bytecode fact |
-| Soundness | call graph complete in this entrypoint's subgraph — sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here) |
-
-**Evidence**
-
-- **[A]** *(bytecode fact)* — export `initialize_rewards_config`: reachable host functions = {extend_current_contract_instance_and_code_ttl, fail_with_error, has_contract_data, map_new, obj_from_u64, put_contract_data, symbol_new_from_linear_memory, vec_new_from_linear_memory}. Subgraph of 23 functions, call graph complete.
-- **[A]** *(bytecode fact)* — No path reaches require_auth or require_auth_for_args — sound negative.
-- **[A]** *(bytecode fact)* — A path to a storage write exists: 3 hops from the export to put_contract_data/del_contract_data.
-- **[A]** *(bytecode fact)* — `has_contract_data` IS reachable from this export.
-- **[C]** *(inference — requires human review)* — A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability.
-- **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 3 hops → Medium.
-- **[C]** *(inference — requires human review)* — ⚠ REVIEW: the path to the write is 3 hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.
-- **[C]** *(inference — requires human review)* — The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.
-
-> **Tier B/C note.** Observed traffic (14071 events over ~27.2 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize_rewards_config` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
-
-> **This finding is not yet a finding.** The positive evidence is over-approximate and needs to be confirmed in the source of `initialize_rewards_config` before entering a fix plan. See Elevation.5.R.1.
+> **This finding is closed by observation.** The unsigned probe above reached an already-initialized guard of each listed entrypoint: the front-running window described in tier C has already closed on this instance. It stays in the document as the re-deploy risk it still is — see Elevation.1.R.1 — not as an open issue.
 
 ### Declared gaps
 
 #### **S**poofing
 
-**Declared gap — not derivable from the bytecode.** The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. **Requires manual review of the off-chain flow:** custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. **Where identity is asserted in this contract:** 38 invocable entrypoints reach `require_auth*`. **Admin-shaped (18, key-holder trace required):** `admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more — those are the calls whose `Address` the review has to trace back to a key holder: custody, multisig or a single key. **User-shaped (20, no key-holder trace):** `adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more — there `require_auth` is the caller authorizing their own address, which is the expected shape of a user operation, not access control; there is no privileged key behind it to trace. **This split is a name-shape heuristic (tier C), not a bytecode fact** — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's.
+**Declared gap — not derivable from the bytecode.** The call graph shows *whether* a path reaches `require_auth`; never *who* the verified `Address` is, who holds that address's key, nor how the client that builds the transaction authenticates the user. Identity lives outside the contract. Measured on soroguard's calibration corpus (75 mainnet contracts, `docs/CALIBRACAO.md`): zero derivable findings in 100% of them — this is a structural limit of bytecode analysis, not a detector failure on this contract. **Requires manual review of the off-chain flow:** custody of the privileged keys (multisig or a single key?), authentication of the frontend/backend that signs, and whether any address with an administrative role is a shared account. **Where identity is asserted in this contract:** 38 invocable entrypoints reach `require_auth*`. **Access control (18 admin-shaped, key-holder trace required):** `admin_set_rewards_state`, `apply_transfer_ownership`, `apply_upgrade`, `commit_transfer_ownership`, `commit_upgrade`, `kill_claim` and 12 more — those are the calls whose `Address` is a privileged role and has to be traced back to a key holder: custody, multisig or a single key. **Self-authorization (20 user-shaped, no key-holder trace):** `adjust_total_accumulated_reward`, `claim`, `claim_all_position_fees`, `claim_position_fees`, `claim_protocol_fees`, `deposit` and 14 more — there `require_auth` is the caller authorizing their own address (`swap`, `deposit`, `withdraw` are the usual shape), which is a user operation, not access control; there is no privileged key behind it to trace. **This split is a name-shape heuristic (tier C), not a bytecode fact** — the bytecode shows that `require_auth*` is reached, never *whose* address is authorized. Check it against the signatures before using the split as a work list. The module does not export `__check_auth`, so the signature check is the host's, not this contract's.
 
 #### **T**ampering
 
@@ -830,5 +759,19 @@ Outside the scope of this run — it depends on audits, manual review and incide
   - The analysis is of **deployed bytecode**, and the asymmetry matters: "does not reach `require_auth`" is a sound negative for this module's call graph — it says nothing about authorization enforced inside a contract reached through `call`/`try_call`, nor about `__check_auth`; "reaches `put_contract_data`" is an over-approximation, because the write may sit on a branch the entrypoint never executes. Every positive finding carries its hop count for that reason.
   - This module's call graph is complete (no `call_indirect`), so the negative claims in this document are sound with respect to that graph — and only to it.
   - Spoofing and Information Disclosure do not come out of the bytecode: they depend on identity and on a product decision about which data goes onto a public ledger, and neither is in the binary. Measured on the calibration corpus: zero findings in 100% of the 75 mainnet contracts (`docs/CALIBRACAO.md`). Filling those two letters with generic text to satisfy the template's "≥1 per letter" is what would get the document discarded by the first competent reviewer. What this run hands the manual review for those two letters, in numbers: 38 of 96 invocable entrypoints reaching `require_auth*`, 29 inferred storage keys and 1 declared event topic.
-  - The window was observed (17667 ledgers, ~27.2 h, 14071 events across 9 topics), but **no monitor in the sibling plan could anchor a baseline on it** — no monitor binds an observed topic — the plan's rules filter on topics that did not appear in the window. Tier B here is a record of the window, not a baseline: every threshold in the monitoring plan still has to declare that it has no observed basis.
+  - The window was observed (40160 ledgers, ~61.76 h, 42457 events across 9 topics), but **no monitor in the sibling plan could anchor a baseline on it** — no monitor binds an observed topic — the plan's rules filter on topics that did not appear in the window. Tier B here is a record of the window, not a baseline: every threshold in the monitoring plan still has to declare that it has no observed basis.
   - What this model does **not** cover, by construction: economic design (incentives, settlement, oracle), governance and custody of the privileged keys, security of the frontend and of the infrastructure that builds the transactions, and whether the address authorized in each `require_auth` is the right address. None of those questions can be answered from the binary.
+
+### Submission verdict
+
+**NEEDS INPUT.** The tool's own checks pass; 5 items below are input that no bytecode or on-chain analysis produces. Filling them is what makes this document submittable — nothing in the analysis has to change.
+
+### Input the team must provide before submitting
+
+None of these comes out of a binary or out of the chain. Each line names the worksheet it is filled from; the analysis above does not change when they are answered.
+
+1. Write section 1, "What are we working on?": what the protocol does, who the actors are, what value it holds in custody and which trust assumptions live off-chain. Worksheet: the *Analyzed object* table and the measured surface right below the gap notice in section 1 — the bytecode records none of that, so no analysis closes this one.
+2. STRIDE letter Spoof has no issue — the template requires at least one; fill it from the worksheet in the Spoof gap section (it lists the concrete surface to review).
+3. STRIDE letter Tamper has no issue — the template requires at least one; fill it from the worksheet in the Tamper gap section (it lists the concrete surface to review).
+4. STRIDE letter Info has no issue — the template requires at least one; fill it from the worksheet in the Info gap section (it lists the concrete surface to review).
+5. STRIDE letter DoS has no issue — the template requires at least one; fill it from the worksheet in the DoS gap section (it lists the concrete surface to review).

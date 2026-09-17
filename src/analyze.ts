@@ -13,6 +13,29 @@ import { hostFn, AUTH_FNS, AUTH_DELEGATE_FNS, STORAGE_WRITE_FNS, STORAGE_READ_FN
  */
 export type Soundness = "sound" | "approximate";
 
+/** As três durabilidades de storage do Soroban, com semânticas irreconciliáveis. */
+export type Durability = "temporary" | "persistent" | "instance";
+
+/**
+ * Durabilidades que um entrypoint toca, e o quanto disso foi de fato lido.
+ *
+ * `sites`/`literal` não são decoração: a durabilidade só é legível quando chega ao
+ * call site como literal. Quando o contrato acessa storage por um helper genérico que
+ * recebe a durabilidade por parâmetro, o argumento é computado e não há o que ler.
+ * Publicar `writes` sem publicar a cobertura transformaria "não consegui ler" em
+ * "não usa", que é a inversão que este projeto existe para não cometer.
+ */
+export type DurabilityUse = {
+  /** durabilidades tocadas por `put`/`del` no subgrafo deste entrypoint */
+  writes: ReadonlySet<Durability>;
+  /** durabilidades tocadas por `get`/`has` */
+  reads: ReadonlySet<Durability>;
+  /** call sites de acesso a storage no subgrafo */
+  sites: number;
+  /** quantos desses tinham a durabilidade como literal adjacente à chamada */
+  literal: number;
+};
+
 /**
  * ATENÇÃO — a assimetria acima só vale para a NEGATIVA. A positiva é super-aproximada:
  * "alcança put_contract_data" NÃO significa "escreve". Calibração em corpus real mostrou
@@ -50,6 +73,8 @@ export type Entrypoint = {
    * módulo inteiro é incompleto: negativas deixam de ser prova.
    */
   callGraphComplete: boolean;
+  /** durabilidade de storage tocada neste subgrafo — ver `DurabilityUse` */
+  durability: DurabilityUse;
 };
 
 /** Ordem entre autorização e escrita DENTRO de um mesmo corpo — o único caso conferível. */
@@ -76,18 +101,72 @@ export type ModuleAnalysis = {
   incompleteReason?: string;
   /** por entrypoint: corpos onde escrita precede autorização */
   writeBeforeAuth: Map<string, OrderEvidence[]>;
+  /**
+   * Cobertura da leitura de durabilidade no MÓDULO, cada call site contado uma vez.
+   * A soma dos `DurabilityUse` por entrypoint não serve para isso: um helper de storage
+   * compartilhado por 20 exports entraria 20 vezes, e o número publicado deixaria de
+   * ser "call sites deste módulo" sem que o texto mudasse.
+   */
+  durabilityCoverage: { sites: number; literal: number };
 };
 
 /** Exports que o compilador gera e que não são entrypoints do contrato. */
 const NOT_ENTRYPOINTS = /^(memory|__data_end|__heap_base|__rust_|_$)/;
 
 export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
-  const mod = parseModule(wasm);
+  const mod = parseModule(wasm, { consts: true });
   const nImports = mod.imports.length;
   const bodyByIdx = new Map(mod.bodies.map((b) => [b.funcIdx, b]));
 
   const hostNameOf = (funcIdx: number): string | undefined =>
     funcIdx < nImports ? hostFn(mod.imports[funcIdx].key)?.name ?? mod.imports[funcIdx].key : undefined;
+
+  /* ---------- durabilidade de storage, por corpo ---------- */
+
+  /**
+   * As QUATRO host functions em que `StorageType` é o ÚLTIMO argumento:
+   *   put_contract_data(k, v, t) · del_contract_data(k, t)
+   *   get_contract_data(k, t)    · has_contract_data(k, t)
+   * Sendo o último argumento, ele é o topo da pilha no `call`, logo um `i64.const`
+   * cujo `end` é exatamente o offset da chamada É esse argumento — por construção,
+   * não por proximidade. É o que `ConstSite.end` existe para permitir afirmar.
+   *
+   * `extend_contract_data_ttl` fica DE FORA de propósito: lá o `StorageType` é o 2º
+   * de 4 argumentos e não está adjacente à chamada. Ler por adjacência devolveria o
+   * argumento errado com cara de certeza, que é pior do que não medir.
+   */
+  const DURABILITY_FNS = new Map<string, "write" | "read">([
+    ["put_contract_data", "write"],
+    ["del_contract_data", "write"],
+    ["get_contract_data", "read"],
+    ["has_contract_data", "read"],
+  ]);
+  /** `StorageType` é `#[repr(u64)]` passada por marshalling direto. */
+  const DUR_BY_CODE: Record<number, Durability> = { 0: "temporary", 1: "persistent", 2: "instance" };
+
+  type DurSite = { kind: "write" | "read"; dur?: Durability };
+  const durSitesByFunc = new Map<number, DurSite[]>();
+  for (const body of mod.bodies) {
+    const consts = body.consts ?? [];
+    let sites: DurSite[] | undefined;
+    for (const c of body.calls) {
+      const n = hostNameOf(c.target);
+      if (!n) continue;
+      const kind = DURABILITY_FNS.get(n);
+      if (!kind) continue;
+      const lit = consts.find((x) => x.end === c.offset);
+      // discriminante fora de {0,1,2}: não inventa durabilidade, conta como não lido
+      const dur = lit ? DUR_BY_CODE[Number(lit.value)] : undefined;
+      (sites ??= []).push({ kind, dur });
+    }
+    if (sites) durSitesByFunc.set(body.funcIdx, sites);
+  }
+
+  const durabilityCoverage = ((): { sites: number; literal: number } => {
+    let sites = 0, literal = 0;
+    for (const ss of durSitesByFunc.values()) for (const s of ss) { sites++; if (s.dur) literal++; }
+    return { sites, literal };
+  })();
 
   /**
    * BFS a partir do export: distância em saltos + ponteiros de pai.
@@ -101,6 +180,12 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
     const parent = new Map<number, number>();
     let hasIndirect = false;
     let degraded = false;
+    // Durabilidade sai DESTA travessia, e não de uma segunda: duas travessias
+    // divergentes produziriam dois laudos diferentes para o mesmo binário.
+    const durWrites = new Set<Durability>();
+    const durReads = new Set<Durability>();
+    let durSites = 0;
+    let durLiteral = 0;
 
     const caminhoAte = (idx: number): number[] => {
       const out: number[] = [];
@@ -122,6 +207,13 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
       if (!body) continue;
       if (body.hasIndirectCall) hasIndirect = true;
       if (body.degraded) degraded = true;
+      // a fila só admite cada função uma vez, então nenhum corpo é contado em duplicidade
+      for (const s of durSitesByFunc.get(idx) ?? []) {
+        durSites++;
+        if (!s.dur) continue;
+        durLiteral++;
+        (s.kind === "write" ? durWrites : durReads).add(s.dur);
+      }
       const d = dist.get(idx)!;
       for (const c of body.calls) {
         if (dist.has(c.target)) continue;
@@ -130,7 +222,10 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
         fila.push(c.target);
       }
     }
-    return { reaches, pathTo, fanout: dist.size, hasIndirect, degraded };
+    return {
+      reaches, pathTo, fanout: dist.size, hasIndirect, degraded,
+      durability: { writes: durWrites, reads: durReads, sites: durSites, literal: durLiteral },
+    };
   }
 
   /**
@@ -181,7 +276,7 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
   const entrypoints: Entrypoint[] = [];
   for (const e of mod.exports) {
     if (NOT_ENTRYPOINTS.test(e.name)) continue;
-    const { reaches, pathTo, fanout, hasIndirect, degraded } = bfs(e.funcIdx);
+    const { reaches, pathTo, fanout, hasIndirect, degraded, durability } = bfs(e.funcIdx);
     entrypoints.push({
       name: e.name,
       funcIdx: e.funcIdx,
@@ -191,6 +286,7 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
       callGraphComplete: !hasIndirect && !degraded && mod.incomplete !== true,
       pathTo,
       reachesViaTable: hasIndirect ? tableReach : VAZIO,
+      durability,
     });
   }
 
@@ -247,6 +343,7 @@ export function analyzeModule(wasm: Uint8Array): ModuleAnalysis {
     soundness: hasIndirectAnywhere || hasDegraded || mod.incomplete === true ? "approximate" : "sound",
     incompleteReason: mod.incompleteReason,
     writeBeforeAuth,
+    durabilityCoverage,
   };
 }
 
@@ -266,6 +363,13 @@ function decodeEnvMeta(b: Uint8Array): { protocol: number; preRelease: number } 
 /* ---------- consultas que os detectores usam ---------- */
 
 const any = (s: ReadonlySet<string>, set: ReadonlySet<string>) => [...set].some((n) => s.has(n));
+
+/** Ordem canônica: da mais volátil para a mais compartilhada. */
+export const DURABILITY_ORDER = ["temporary", "persistent", "instance"] as const;
+
+/** Durabilidades de ESCRITA do entrypoint, em ordem canônica. Vazio = nenhuma lida. */
+export const writeDurabilities = (ep: Entrypoint): Durability[] =>
+  DURABILITY_ORDER.filter((d) => ep.durability.writes.has(d));
 
 export const requiresAuth = (ep: Entrypoint) => any(ep.reaches, AUTH_FNS);
 export const writesStorage = (ep: Entrypoint) => any(ep.reaches, STORAGE_WRITE_FNS);

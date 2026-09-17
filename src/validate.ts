@@ -90,6 +90,15 @@ const MARCA_OFFCHAIN =
   /off-?chain|fora\s+da\s+chain|fluxo\s+off|governan[çc]a|chave\s+privada|processo\s+operacional|infraestrutura|governance|private\s+key|operational\s+process|infrastructure/i;
 const MARCA_POSTERIOR =
   /quest[õo]es\s+adicionais|surgir(am|em)\s+depois|ap[óo]s\s+a\s+revis[ãa]o|itens?\s+em\s+aberto|follow-?up|open\s+issues|pend[êe]ncias\s+da\s+revis[ãa]o|additional\s+(issues|questions)|surfaced?\s+(after|later)|after\s+the\s+review/i;
+/**
+ * A lacuna da §1 do template, como os renderizadores a escrevem nos dois idiomas. Enquanto ela
+ * estiver no documento, a primeira pergunta do template ("What are we working on?") está sem
+ * resposta — e nenhuma análise de bytecode a responde: propósito de negócio, atores e custódia
+ * não estão no binário. Some do documento quando a equipe escreve o parágrafo, e é por isso que
+ * ela é lida no texto em vez de assumida: o validador mede o documento, não a intenção.
+ */
+const MARCA_LACUNA_EQUIPE = /Gap to be filled by the team|Lacuna a preencher pela equipe/i;
+
 const MARCA_NIVEL = /n[íi]vel\s+[ABC]\b|\(\s*[ABC]\s*\)|\[\s*[ABC]\s*\]|tier\s+[ABC]\b/;
 /**
  * MARCA por afirmação — `[A]`, `(B)`. Não casa com prosa ("níveis A+C", "nível de evidência"),
@@ -190,6 +199,16 @@ const M = msgs({
   en: {
     /* comuns */
     docVazio: "Empty document: there is no rendered markdown to validate.",
+    /**
+     * §1 do template. É a única pergunta do documento cuja resposta não está no binário em
+     * nenhuma forma — por isso ela é `needsInput`, nunca blocker: não há nada que a ferramenta
+     * pudesse ter feito e não fez.
+     */
+    inputSecao1:
+      'Write section 1, "What are we working on?": what the protocol does, who the actors are, what value ' +
+      "it holds in custody and which trust assumptions live off-chain. Worksheet: the *Analyzed object* " +
+      "table and the measured surface right below the gap notice in section 1 — the bytecode records none " +
+      "of that, so no analysis closes this one.",
     /* threat model */
     tmSemAmeaca:
       "No threat derived from the bytecode: the document does not contain a single threat, and all six STRIDE letters would come out as gaps. This is not a submittable threat model — it is the report that the automated analysis did not cover this contract and that it needs manual modelling.",
@@ -463,6 +482,11 @@ const M = msgs({
   },
   pt: {
     docVazio: "Documento vazio: não há markdown renderizado para validar.",
+    inputSecao1:
+      'Escrever a seção 1, "What are we working on?": o que o protocolo faz, quem são os atores, que valor ' +
+      "ele custodia e quais suposições de confiança vivem fora da cadeia. Planilha: a tabela *Objeto " +
+      "analisado* e a superfície medida logo abaixo do aviso de lacuna da seção 1 — o bytecode não registra " +
+      "nada disso, então nenhuma análise fecha esta.",
     tmSemAmeaca:
       "Nenhuma ameaça derivada do bytecode: o documento não contém um único threat, e as seis letras do STRIDE sairiam como lacuna. Isso não é um threat model submetível — é o laudo de que a análise automática não cobriu este contrato e ele precisa de modelagem manual.",
     qDfd: "O data-flow diagram foi derivado da análise (processos = entrypoints, data stores = chaves de storage, fronteiras = auth e cross-call)?",
@@ -752,7 +776,15 @@ function prosa(md: string): string {
 }
 
 const EH_TITULO = /^\s{0,3}#{1,6}\s/;
-const LIMITE_BLOCO = 14;
+/**
+ * Teto de linhas de um bloco. O delimitador real é o próximo título ou o próximo ID
+ * concorrente; este número só existe para um documento malformado não varrer o arquivo
+ * inteiro. Ficou em 14 enquanto o achado mais longo cabia nisso — e passou a MENTIR quando
+ * classes com 5+ linhas de evidência entraram: a janela cortava antes da primeira marca
+ * `[C]`, e uma inferência promovida a `[A]` no fim do bloco passava despercebida, que é
+ * exatamente a regra que este validador existe para não deixar quebrar.
+ */
+const LIMITE_BLOCO = 40;
 
 /**
  * Escopo textual de um termo: da linha onde ele aparece até o próximo título, a próxima
@@ -894,6 +926,30 @@ function numeroAntesDe(txt: string, termo: RegExp): number | undefined {
  * leitura da coluna de dono: um monitor é citado antes na tabela de cenários e só
  * depois na tabela que tem a coluna Owner.
  */
+/**
+ * O veredito de três estados.
+ *
+ * Dois estados mentiam nos dois sentidos. `submittable: false` num documento cujo único
+ * pendente é "a equipe precisa nomear o dono do alerta" diz ao time que a ferramenta falhou;
+ * `submittable: true` só chegaria apagando o pendente. O terceiro estado separa o que a
+ * FERRAMENTA deveria ter cumprido (`blockers`) do que só um humano fecha (`needsInput`) —
+ * e a ordem importa: um blocker da ferramenta nunca é encoberto por um preenchimento.
+ */
+function veredito(blockers: readonly string[], needsInput: readonly string[]): NonNullable<ValidationReport["verdict"]> {
+  if (blockers.length) return "not-submittable";
+  return needsInput.length ? "needs-input" : "submittable";
+}
+
+function relatorio(
+  document: ValidationReport["document"],
+  items: ChecklistItem[],
+  blockers: string[],
+  needsInput: string[],
+): ValidationReport {
+  const v = veredito(blockers, needsInput);
+  return { document, items, submittable: v === "submittable", blockers, verdict: v, needsInput };
+}
+
 function linhasDe(md: string, re: RegExp): number[] {
   const { linhas, cercada } = fatiar(md);
   const out: number[] = [];
@@ -908,10 +964,14 @@ export function validateThreatModel(ctx: ArtifactContext, markdown: string): Val
   const texto = prosa(md);
   const items: ChecklistItem[] = [];
   const blockers: string[] = [];
+  /** Pendências que nenhuma análise fecha — ver `veredito`. */
+  const needsInput: string[] = [];
   const add = (question: string, status: ChecklistItem["status"], detail: string) =>
     items.push({ question, status, detail });
 
   if (!md.trim()) blockers.push(M.docVazio);
+  // A §1 continua por escrever enquanto o aviso de lacuna do renderizador estiver no documento.
+  if (md.trim() && MARCA_LACUNA_EQUIPE.test(md)) needsInput.push(M.inputSecao1);
 
   const ids = ctx.findings.map(idDe);
   const resIds = ids.map(reId);
@@ -1054,13 +1114,15 @@ export function validateThreatModel(ctx: ArtifactContext, markdown: string): Val
     // e deixava passar uma Spoof preenchida com genérico. Medido na suíte adversarial.
     const b = bloco(md, resLetras[LETRAS.indexOf(l)], resLetras);
     // Lacuna declarada é o texto CERTO (ver PROBLEMA.md: campo honestamente vazio > enchimento),
-    // e por isso ela continua listada como cobertura declarada. Mas o template oficial exige ≥1
-    // issue por letra, então ela é blocker: o documento não é submetível enquanto a letra estiver
-    // sem issue. O que o blocker manda fazer é preencher a partir da planilha da própria lacuna.
+    // e por isso ela continua listada como cobertura declarada. O template oficial exige ≥1 issue
+    // por letra, então a letra vazia continua barrando a submissão — mas como PREENCHIMENTO, não
+    // como falha da ferramenta: o bytecode não sustenta issue nessa letra, e a planilha da própria
+    // lacuna diz qual é a superfície a revisar. Chamar isso de blocker fazia todo contrato real
+    // sair "NÃO submetível" sem distinguir documento errado de documento à espera do time.
     if (MARCA_LACUNA.test(b)) {
       okLetras.push(M.letraComLacuna(l));
       problemas.push(M.letraSemIssue(l));
-      blockers.push(M.letraSemIssueBlocker(l));
+      needsInput.push(M.letraSemIssueBlocker(l));
       continue;
     }
     const maiorProsa = Math.max(...men.map(palavras));
@@ -1180,7 +1242,7 @@ export function validateThreatModel(ctx: ArtifactContext, markdown: string): Val
     ].join("; ") + ".",
   );
 
-  return { document: "threat-model", items, submittable: blockers.length === 0, blockers };
+  return relatorio("threat-model", items, blockers, needsInput);
 }
 
 /* ================= monitoring plan ================= */
@@ -1196,6 +1258,8 @@ export function validateMonitoringPlan(ctx: ArtifactContext, markdown: string, m
   const mons = monitors ?? [];
   const items: ChecklistItem[] = [];
   const blockers: string[] = [];
+  /** Pendências que nenhuma análise fecha — ver `veredito`. */
+  const needsInput: string[] = [];
   const add = (question: string, status: ChecklistItem["status"], detail: string) =>
     items.push({ question, status, detail });
 
@@ -1356,7 +1420,9 @@ export function validateMonitoringPlan(ctx: ArtifactContext, markdown: string, m
    * acima da linha que diz "nenhuma janela foi coletada".
    */
   for (const m of semBaseline) {
-    if (!ehEvento(m)) blockers.push(M.baseFillInBlocker(m.id));
+    // (c) é PREENCHIMENTO: nenhuma janela produziria esse baseline, então não há coleta que a
+    // ferramenta tenha deixado de fazer — o valor é lido do ledger na aprovação do plano.
+    if (!ehEvento(m)) needsInput.push(M.baseFillInBlocker(m.id));
     else if (obs?.window && obs.window.insufficient) blockers.push(M.baseJanelaInsuficienteBlocker(m.id, obs.window.ledgers));
     else blockers.push(comMotivo(M.baseSemBaselineBlocker(m.id), motivo));
   }
@@ -1415,10 +1481,10 @@ export function validateMonitoringPlan(ctx: ArtifactContext, markdown: string, m
     return MARCA_DONO_ATRIB.test(bloco(md, reId(m.id), resMon));
   };
   const semDono = mons.filter((m) => !temDono(m));
-  // Monitor sem dono não é detalhe de formulário: é alerta sem destinatário. O template
-  // pede a coluna, e um plano que a deixa vazia não é submetível — era blocker na versão
-  // que vivia no renderizador e continua sendo aqui, agora na fonte única.
-  if (semDono.length) blockers.push(M.donoBlocker(semDono.length));
+  // Monitor sem dono não é detalhe de formulário: é alerta sem destinatário, e continua barrando
+  // a submissão. Mas nem o binário nem a chain dizem quem é o dono — é preenchimento da equipe,
+  // e contá-lo como falha da ferramenta era o que fazia todo plano sair "NÃO submetível".
+  if (semDono.length) needsInput.push(M.donoBlocker(semDono.length));
   add(
     M.qDono,
     mons.length && !semDono.length ? "ok" : "gap",
@@ -1466,7 +1532,8 @@ export function validateMonitoringPlan(ctx: ArtifactContext, markdown: string, m
   const temId = ctx.contractId ? md.includes(ctx.contractId) : false;
   const hash = ctx.spec?.wasmHash;
   if (!temId) blockers.push(M.endSemIdBlocker(ctx.contractId));
-  if (!hash) blockers.push(M.endSemHashBlocker);
+  // O hash da instância se lê do ledger no momento da aprovação do plano: é registro, não análise.
+  if (!hash) needsInput.push(M.endSemHashBlocker);
   add(
     M.qEnderecos,
     temId && hash ? "ok" : "gap",
@@ -1585,5 +1652,5 @@ export function validateMonitoringPlan(ctx: ArtifactContext, markdown: string, m
     if (it.status === "ok" && PENDENCIA_NA_LINHA.test(it.detail)) it.status = "gap";
   }
 
-  return { document: "monitoring-plan", items, submittable: blockers.length === 0, blockers };
+  return relatorio("monitoring-plan", items, blockers, needsInput);
 }
