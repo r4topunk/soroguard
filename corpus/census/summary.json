@@ -1,0 +1,510 @@
+{
+ "generatedAt": "2026-09-17",
+ "network": "Stellar mainnet",
+ "reproduce": "node scripts/census.mjs",
+ "indexComplete": true,
+ "scope": {
+  "contractsIndexed": 151079,
+  "wasmContracts": 147051,
+  "sacContracts": 4014,
+  "contractsWithNeitherCodeNorAsset": 14,
+  "distinctCodeHashes": 3677,
+  "crossCheck": {
+   "expertWasm": 147052,
+   "expertSac": 4028,
+   "expertInvocations": 792791445,
+   "wasmDelta": -1,
+   "sacDelta": -14
+  },
+  "hashesFetched": 3677,
+  "hashesAnalyzed": 3677,
+  "hashesAnalyzedOk": 3677,
+  "coverageOfDistinctHashes": 1,
+  "instancesCovered": 147051,
+  "coverageOfWasmInstances": 1,
+  "invocationsCovered": 792148291,
+  "singleInstanceHashes": 2682,
+  "singleInstanceShare": 0.729398966548817,
+  "meanWasmKiB": 18.2
+ },
+ "parse": {
+  "failures": 0,
+  "failureRate": 0,
+  "reasons": {},
+  "incomplete": 0,
+  "degraded": 82,
+  "approximate": 965,
+  "approximateShare": 0.26244220832200166,
+  "callIndirectHashes": 965,
+  "callIndirectShareByHash": 0.26244220832200166,
+  "callIndirectShareByInstance": 0.07187302364485791,
+  "entrypointsTotal": 55785,
+  "entrypointsPerHash": 15.171335327712809
+ },
+ "findings": {
+  "total": 8133,
+  "perHash": 2.211857492521077,
+  "perInstance": 2.023570053926869,
+  "perInvocationWeighted": 2.8106520929172842,
+  "byClass": {
+   "perHash": {
+    "silent-mutation": 2441,
+    "unauthenticated-state-mutation": 1735,
+    "vulnerable-sdk": 1609,
+    "initialization-front-running": 1146,
+    "archival-risk": 1086,
+    "host-prng-in-value-path": 61,
+    "unguarded-upgrade": 42,
+    "write-before-auth": 13
+   },
+   "instanceWeighted": {
+    "vulnerable-sdk": 139772,
+    "silent-mutation": 132828,
+    "unauthenticated-state-mutation": 7561,
+    "initialization-front-running": 7260,
+    "write-before-auth": 6493,
+    "archival-risk": 3125,
+    "host-prng-in-value-path": 437,
+    "unguarded-upgrade": 92
+   },
+   "invocationWeighted": {
+    "vulnerable-sdk": 781579205,
+    "silent-mutation": 718109617,
+    "unauthenticated-state-mutation": 705967570,
+    "initialization-front-running": 17270510,
+    "archival-risk": 3332059,
+    "host-prng-in-value-path": 126809,
+    "write-before-auth": 64848,
+    "unguarded-upgrade": 2634
+   }
+  },
+  "bySeverity": {
+   "perHash": {
+    "Medium": 3263,
+    "High": 2671,
+    "Low": 1629,
+    "Critical": 570
+   },
+   "instanceWeighted": {
+    "Low": 146343,
+    "Medium": 139896,
+    "High": 8227,
+    "Critical": 3102
+   },
+   "invocationWeighted": {
+    "Low": 781646954,
+    "High": 717209084,
+    "Critical": 701491982,
+    "Medium": 26105232
+   }
+  },
+  "unauthenticatedStateMutation": {
+   "hashes": 817,
+   "hashShare": 0.2221920043513734,
+   "instances": 4770,
+   "instanceShare": 0.03243772568700655
+  }
+ },
+ "usage": {
+  "view": {
+   "allHashes": {
+    "hashes": 3677,
+    "instances": 147051,
+    "invocations": 792148291,
+    "findings": 8133,
+    "findingsPerHash": 2.211857492521077,
+    "criticalTotal": 570,
+    "criticalPerHash": 0.15501767745444656,
+    "highTotal": 2671,
+    "highPerHash": 0.7264073973347838,
+    "byClass": {
+     "silent-mutation": 2441,
+     "unauthenticated-state-mutation": 1735,
+     "vulnerable-sdk": 1609,
+     "initialization-front-running": 1146,
+     "archival-risk": 1086,
+     "host-prng-in-value-path": 61,
+     "unguarded-upgrade": 42,
+     "write-before-auth": 13
+    },
+    "bySeverity": {
+     "Medium": 3263,
+     "High": 2671,
+     "Low": 1629,
+     "Critical": 570
+    },
+    "unauthRate": 0.2221920043513734,
+    "callIndirectShare": 0.26244220832200166,
+    "sdkDeclaredRate": 0.5643187381017134,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 1592,
+     "GHSA-x2hw-px52-wp4m": 934
+    },
+    "specRate": 0.9983682349741637,
+    "eventsDeclaredRate": 0.23415828120750612
+   },
+   "realUsage": {
+    "hashes": 3526,
+    "instances": 146900,
+    "invocations": 792148291,
+    "findings": 7708,
+    "findingsPerHash": 2.186046511627907,
+    "criticalTotal": 536,
+    "criticalPerHash": 0.1520136131593874,
+    "highTotal": 2506,
+    "highPerHash": 0.7107203630175837,
+    "byClass": {
+     "silent-mutation": 2347,
+     "unauthenticated-state-mutation": 1674,
+     "vulnerable-sdk": 1488,
+     "initialization-front-running": 1081,
+     "archival-risk": 1015,
+     "host-prng-in-value-path": 61,
+     "unguarded-upgrade": 29,
+     "write-before-auth": 13
+    },
+    "bySeverity": {
+     "Medium": 3158,
+     "High": 2506,
+     "Low": 1508,
+     "Critical": 536
+    },
+    "unauthRate": 0.2217810550198525,
+    "callIndirectShare": 0.2595008508224617,
+    "sdkDeclaredRate": 0.55218377765173,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 1471,
+     "GHSA-x2hw-px52-wp4m": 925
+    },
+    "specRate": 0.9985819625638117,
+    "eventsDeclaredRate": 0.24163357912648895
+   },
+   "t3Only": {
+    "hashes": 150,
+    "instances": 141829,
+    "invocations": 3856504,
+    "findings": 408,
+    "findingsPerHash": 2.72,
+    "criticalTotal": 33,
+    "criticalPerHash": 0.22,
+    "highTotal": 82,
+    "highPerHash": 0.5466666666666666,
+    "byClass": {
+     "silent-mutation": 101,
+     "unauthenticated-state-mutation": 93,
+     "vulnerable-sdk": 87,
+     "initialization-front-running": 76,
+     "archival-risk": 31,
+     "host-prng-in-value-path": 10,
+     "write-before-auth": 8,
+     "unguarded-upgrade": 2
+    },
+    "bySeverity": {
+     "Medium": 197,
+     "Low": 96,
+     "High": 82,
+     "Critical": 33
+    },
+    "unauthRate": 0.2733333333333333,
+    "callIndirectShare": 0.32,
+    "sdkDeclaredRate": 0.6466666666666666,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 82,
+     "GHSA-x2hw-px52-wp4m": 55
+    },
+    "specRate": 1,
+    "eventsDeclaredRate": 0.25333333333333335
+   }
+  },
+  "byTier": {
+   "T0": {
+    "hashes": 151,
+    "instances": 151,
+    "invocations": 0,
+    "findings": 425,
+    "findingsPerHash": 2.814569536423841,
+    "criticalTotal": 34,
+    "criticalPerHash": 0.2251655629139073,
+    "highTotal": 165,
+    "highPerHash": 1.0927152317880795,
+    "byClass": {
+     "vulnerable-sdk": 121,
+     "silent-mutation": 94,
+     "archival-risk": 71,
+     "initialization-front-running": 65,
+     "unauthenticated-state-mutation": 61,
+     "unguarded-upgrade": 13
+    },
+    "bySeverity": {
+     "High": 165,
+     "Low": 121,
+     "Medium": 105,
+     "Critical": 34
+    },
+    "unauthRate": 0.23178807947019867,
+    "callIndirectShare": 0.33112582781456956,
+    "sdkDeclaredRate": 0.847682119205298,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 121,
+     "GHSA-x2hw-px52-wp4m": 9
+    },
+    "specRate": 0.9933774834437086,
+    "eventsDeclaredRate": 0.059602649006622516
+   },
+   "T1": {
+    "hashes": 2531,
+    "instances": 2531,
+    "invocations": 781351753,
+    "findings": 5224,
+    "findingsPerHash": 2.0640063216120113,
+    "criticalTotal": 378,
+    "criticalPerHash": 0.14934808376135913,
+    "highTotal": 1843,
+    "highPerHash": 0.7281706835242987,
+    "byClass": {
+     "silent-mutation": 1681,
+     "unauthenticated-state-mutation": 1092,
+     "vulnerable-sdk": 972,
+     "archival-risk": 753,
+     "initialization-front-running": 673,
+     "host-prng-in-value-path": 33,
+     "unguarded-upgrade": 17,
+     "write-before-auth": 3
+    },
+    "bySeverity": {
+     "Medium": 2027,
+     "High": 1843,
+     "Low": 976,
+     "Critical": 378
+    },
+    "unauthRate": 0.20861319636507308,
+    "callIndirectShare": 0.24259186092453575,
+    "sdkDeclaredRate": 0.5349664164361912,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 963,
+     "GHSA-x2hw-px52-wp4m": 636
+    },
+    "specRate": 0.9988146977479258,
+    "eventsDeclaredRate": 0.24259186092453575
+   },
+   "T2": {
+    "hashes": 845,
+    "instances": 2540,
+    "invocations": 6940034,
+    "findings": 2076,
+    "findingsPerHash": 2.4568047337278105,
+    "criticalTotal": 125,
+    "criticalPerHash": 0.14792899408284024,
+    "highTotal": 581,
+    "highPerHash": 0.6875739644970414,
+    "byClass": {
+     "silent-mutation": 565,
+     "unauthenticated-state-mutation": 489,
+     "vulnerable-sdk": 429,
+     "initialization-front-running": 332,
+     "archival-risk": 231,
+     "host-prng-in-value-path": 18,
+     "unguarded-upgrade": 10,
+     "write-before-auth": 2
+    },
+    "bySeverity": {
+     "Medium": 934,
+     "High": 581,
+     "Low": 436,
+     "Critical": 125
+    },
+    "unauthRate": 0.25207100591715975,
+    "callIndirectShare": 0.29940828402366865,
+    "sdkDeclaredRate": 0.58698224852071,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 426,
+     "GHSA-x2hw-px52-wp4m": 234
+    },
+    "specRate": 0.9976331360946745,
+    "eventsDeclaredRate": 0.23668639053254437
+   },
+   "T3": {
+    "hashes": 150,
+    "instances": 141829,
+    "invocations": 3856504,
+    "findings": 408,
+    "findingsPerHash": 2.72,
+    "criticalTotal": 33,
+    "criticalPerHash": 0.22,
+    "highTotal": 82,
+    "highPerHash": 0.5466666666666666,
+    "byClass": {
+     "silent-mutation": 101,
+     "unauthenticated-state-mutation": 93,
+     "vulnerable-sdk": 87,
+     "initialization-front-running": 76,
+     "archival-risk": 31,
+     "host-prng-in-value-path": 10,
+     "write-before-auth": 8,
+     "unguarded-upgrade": 2
+    },
+    "bySeverity": {
+     "Medium": 197,
+     "Low": 96,
+     "High": 82,
+     "Critical": 33
+    },
+    "unauthRate": 0.2733333333333333,
+    "callIndirectShare": 0.32,
+    "sdkDeclaredRate": 0.6466666666666666,
+    "advisoryExposureByHash": {
+     "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 82,
+     "GHSA-x2hw-px52-wp4m": 55
+    },
+    "specRate": 1,
+    "eventsDeclaredRate": 0.25333333333333335
+   }
+  },
+  "tierLabels": {
+   "T0": "T0 — deployed once, never invoked",
+   "T1": "T1 — deployed once, invoked at least once",
+   "T2": "T2 — 2–9 instances",
+   "T3": "T3 — 10 or more instances"
+  },
+  "triageCandidates": 216
+ },
+ "suppressions": {
+  "total": 2660,
+  "byReason": {
+   "reserved `__` function, not directly invocable (CAP-0058)": 1405,
+   "DOWNGRADED (not suppressed): reaches call/try_call — authorization may live in the callee, severity capped at High": 760,
+   "read-shaped name: the write probably comes from a shared helper, not from this path": 403,
+   "permissionless crank by design (protocol maintenance pattern)": 92
+  }
+ },
+ "strideGapRateByHash": {
+  "Spoof": 1,
+  "Tamper": 0.9836823497416372,
+  "Repudiate": 0.3361435953222736,
+  "Info": 1,
+  "DoS": 0.7046505303236335,
+  "Elevation": 0.3709545825401142
+ },
+ "sdk": {
+  "declaredHashes": 2075,
+  "declaredRate": 0.5643187381017134,
+  "unparseableVersions": 0,
+  "versionHistogram": {
+   "22.0.8": 307,
+   "20.5.0": 256,
+   "22.0.7": 201,
+   "22.0.11": 135,
+   "21.7.7": 132,
+   "25.3.1": 77,
+   "20.3.2": 64,
+   "23.0.2": 61,
+   "22.0.6": 56,
+   "23.2.1": 56,
+   "21.7.6": 51,
+   "21.1.1": 49,
+   "25.1.1": 39,
+   "23.5.3": 37,
+   "25.3.0": 30,
+   "23.1.0": 30,
+   "20.4.0": 28,
+   "21.6.0": 27,
+   "23.4.0": 26,
+   "27.0.5": 26,
+   "20.2.0": 24,
+   "23.0.1": 24,
+   "27.0.2": 23,
+   "22.0.5": 23,
+   "26.1.0": 23,
+   "27.0.6": 22,
+   "21.7.4": 17,
+   "23.0.3": 17,
+   "23.4.1": 17,
+   "26.0.0": 15,
+   "26.0.1": 14,
+   "22.0.2": 12,
+   "20.3.1": 12,
+   "27.0.0": 10,
+   "23.5.1": 10,
+   "25.0.2": 9,
+   "21.5.0": 8,
+   "25.3.2": 7,
+   "22.0.4": 7,
+   "22.0.10": 7,
+   "22.0.3": 6,
+   "23.5.2": 6,
+   "22.0.9": 6,
+   "21.7.0": 6,
+   "20.0.0": 5,
+   "21.5.1": 5,
+   "21.4.0": 5,
+   "23.3.0": 5,
+   "20.0.2": 4,
+   "25.1.0": 3,
+   "23.1.1": 3,
+   "22.0.0-rc.3.2": 3,
+   "20.0.3": 3,
+   "26.1.1": 3,
+   "21.7.3": 3,
+   "27.0.4": 3,
+   "21.0.1-preview.3": 2,
+   "27.0.1": 2,
+   "27.0.0-rc.1": 2,
+   "21.1.0-rc.1": 2,
+   "20.0.0-rc2": 1,
+   "25.2.0": 1,
+   "21.7.5": 1,
+   "23.0.0": 1,
+   "21.3.0": 1,
+   "25.0.0": 1,
+   "21.7.2": 1,
+   "22.0.0-rc.3": 1,
+   "25.0.0-rc.2": 1
+  },
+  "advisoryExposureByHash": {
+   "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 1592,
+   "GHSA-x2hw-px52-wp4m": 934
+  },
+  "advisoryExposureByInstance": {
+   "CVE-2026-26267 / GHSA-4chv-4c6w-w254": 139610,
+   "GHSA-x2hw-px52-wp4m": 136841
+  }
+ },
+ "spec": {
+  "withContractSpecV0": 3671,
+  "contractSpecV0Rate": 0.9983682349741637,
+  "withDeclaredEvents": 861,
+  "declaredEventsRate": 0.23415828120750612,
+  "functionsPerSpec": 15.189594116044674,
+  "eventsPerSpec": 3.6905475347316807
+ },
+ "comparison": {
+  "corpus75": {
+   "contracts": 75,
+   "parseFailures": 0,
+   "findings": 162,
+   "findingsPerContract": 2.16,
+   "unauthRate": 0.18666666666666668,
+   "callIndirectShare": 0.32,
+   "sdkDeclaredRate": 0.5466666666666666,
+   "eventsDeclaredRate": 0.24,
+   "specRate": 1
+  },
+  "mainnet": {
+   "contracts": 3677,
+   "findingsPerContract": 2.211857492521077,
+   "unauthRate": 0.2221920043513734,
+   "callIndirectShare": 0.26244220832200166,
+   "sdkDeclaredRate": 0.5643187381017134,
+   "eventsDeclaredRate": 0.23415828120750612,
+   "specRate": 0.9983682349741637
+  }
+ },
+ "endpointBehaviour": {
+  "expertPages": 0,
+  "expert429": 0,
+  "expert5xx": 0,
+  "rpcCalls": 0,
+  "rpc429": 0,
+  "rpc5xx": 0
+ }
+}

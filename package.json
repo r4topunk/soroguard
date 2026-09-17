@@ -1,0 +1,59 @@
+{
+  "name": "soroguard",
+  "version": "0.0.1",
+  "description": "Generates a STRIDE threat model and an on-chain monitoring plan from the deployed WASM of a Soroban contract, in the official Stellar templates (SCF Build tranche #2).",
+  "type": "module",
+  "bin": {
+    "soroguard": "./dist/cli.js",
+    "soroguard-mcp": "./dist/mcp.js"
+  },
+  "files": [
+    "dist",
+    "src/hostfns.json",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "dev": "node src/cli.ts",
+    "clean": "rm -rf dist",
+    "build": "pnpm run clean && tsc -p tsconfig.json",
+    "test": "node --test \"test/*.test.ts\"",
+    "prepublishOnly": "pnpm run clean && pnpm build && pnpm test"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r4topunk/soroguard.git"
+  },
+  "homepage": "https://github.com/r4topunk/soroguard#readme",
+  "bugs": {
+    "url": "https://github.com/r4topunk/soroguard/issues"
+  },
+  "author": "r4to",
+  "keywords": [
+    "soroban",
+    "stellar",
+    "wasm",
+    "security",
+    "threat-model",
+    "stride",
+    "monitoring",
+    "scf"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.1.0",
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

@@ -1,0 +1,177 @@
+import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { createHash } from "node:crypto";
+import { analyzeModule } from "./analyze.ts";
+import { detectFull, lacunas } from "./detect.ts";
+import { fetchWasm, modelFromEntries, parseSpecEntries } from "./spec.ts";
+import { inferStorageKeys } from "./storagekeys.ts";
+import { buildDfd } from "./render/dfd.ts";
+import { deriveMonitors } from "./monitors.ts";
+import { observe } from "./events.ts";
+import { setLang, msgs } from "./i18n.ts";
+import type { Lang } from "./i18n.ts";
+import type { ArtifactContext } from "./artifact.ts";
+
+/** Formato canônico de um contract id Soroban (StrKey `C` + 55 chars base32). */
+export const CONTRACT_ID_RE = /^C[A-Z2-7]{55}$/;
+
+const M = msgs({
+  en: {
+    naoDerivavel: "⟨not derivable from the file⟩",
+    observando: (rede: string) => `observing on-chain events on ${rede}, ~15 s…`,
+    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number) =>
+      `observed window: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insufficient for a baseline" : ""}, ${topics} distinct topics`,
+    falhou: (erro: string) => `on-chain observation failed: ${erro}`,
+    timeout: (s: number) => `timed out after ${s} s`,
+  },
+  pt: {
+    naoDerivavel: "⟨não derivável do arquivo⟩",
+    observando: (rede: string) => `observando eventos on-chain em ${rede}, ~15 s…`,
+    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number) =>
+      `janela observada: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insuficiente para baseline" : ""}, ${topics} topics distintos`,
+    falhou: (erro: string) => `observação on-chain falhou: ${erro}`,
+    timeout: (s: number) => `timeout após ${s} s`,
+  },
+});
+
+/**
+ * O que vai nas células "On-chain address" quando o alvo é um arquivo local cujo nome não
+ * carrega o contract id. Um caminho de arquivo ali seria um endereço inválido apresentado
+ * como endereço — o revisor copiaria e o filtro não casaria com nada.
+ *
+ * É texto, então depende do idioma corrente: use a função. A constante fica como o valor
+ * padrão (inglês) para quem precisa de uma comparação estática.
+ */
+export const enderecoNaoDerivavel = (): string => M.naoDerivavel;
+export const ENDERECO_NAO_DERIVAVEL = "⟨not derivable from the file⟩";
+
+/** O alvo é um arquivo local? `.wasm` por extensão, ou qualquer caminho que exista em disco. */
+export function isLocalTarget(target: string): boolean {
+  return target.endsWith(".wasm") || existsSync(target);
+}
+
+export type ResolvedTarget = {
+  wasm: Uint8Array;
+  wasmHash?: string;
+  /** endereço on-chain, ou o marcador quando o alvo é arquivo e o nome não o revela */
+  contractId: string;
+  /** caminho do arquivo analisado, quando o alvo foi um arquivo local */
+  analyzedFile?: string;
+};
+
+/**
+ * Resolução de alvo única para `inspect`, `analyze` e `artifact`: arquivo local se ele
+ * existe (ou termina em `.wasm`), senão busca o WASM deployado pelo contract id.
+ *
+ * Quando o alvo é arquivo, o contract id só é afirmado se o **nome** do arquivo for um
+ * StrKey de contrato — é como o corpus é nomeado. Caso contrário o endereço sai marcado
+ * como não derivável em vez de receber o caminho do arquivo (AQ-6).
+ */
+export async function resolveTarget(target: string, network: string): Promise<ResolvedTarget> {
+  if (isLocalTarget(target)) {
+    const wasm = new Uint8Array(readFileSync(target));
+    const base = basename(target).replace(/\.wasm$/i, "");
+    // O wasm hash do ledger é, por definição, o sha256 dos bytes do módulo — para um
+    // arquivo local ele é derivável e vale como fato A (conferível contra `getLedgerEntries`).
+    const wasmHash = createHash("sha256").update(wasm).digest("hex");
+    return {
+      wasm,
+      wasmHash,
+      contractId: CONTRACT_ID_RE.test(base) ? base : enderecoNaoDerivavel(),
+      analyzedFile: target,
+    };
+  }
+  const { wasm, wasmHash } = await fetchWasm(target, network);
+  return { wasm, wasmHash, contractId: target };
+}
+
+/** Deadline global: o observe() não é cancelável, então corremos contra um timer. */
+function comPrazo<T>(p: Promise<T>, ms: number): Promise<T> {
+  if (!Number.isFinite(ms) || ms <= 0) return p;
+  let timer: NodeJS.Timeout;
+  const prazo = new Promise<never>((_, rej) => {
+    timer = setTimeout(() => rej(new Error(M.timeout(Math.round(ms / 1000)))), ms);
+    timer.unref?.();
+  });
+  // A promessa perdedora continua viva; engolir a rejeição evita unhandled rejection.
+  void p.catch(() => {});
+  return Promise.race([p, prazo]).finally(() => clearTimeout(timer!)) as Promise<T>;
+}
+
+/**
+ * Monta o ArtifactContext completo. A ordem importa: o DFD precisa das chaves de
+ * storage, e os monitores precisam do DFD e das observações.
+ * `generatedAt` entra de fora — nenhum módulo abaixo lê relógio, para que a saída
+ * seja reprodutível em teste.
+ */
+export async function buildContext(opts: {
+  target: string;
+  network: string;
+  generatedAt: string;
+  /** pular a ida à rede para observar eventos (nível B) */
+  offline?: boolean;
+  /** idioma da saída; o pipeline aplica `setLang` antes de renderizar */
+  lang?: Lang;
+  /** prazo total da fase de observação, em ms (0 = sem prazo) */
+  timeoutMs?: number;
+  /** progresso legível para stderr — o CLI liga isto; testes não */
+  onProgress?: (msg: string) => void;
+}): Promise<ArtifactContext> {
+  // Único ponto que fixa o idioma do pipeline: os achados nascem em `detectFull`, logo
+  // abaixo, então `setLang` precisa acontecer ANTES da análise — não na hora de renderizar.
+  setLang(opts.lang ?? "en");
+
+  const alvo = await resolveTarget(opts.target, opts.network);
+  const wasm = alvo.wasm;
+
+  const analysis = analyzeModule(wasm);
+  const { findings } = detectFull(analysis, wasm);
+  const specParts = modelFromEntries(parseSpecEntries(wasm));
+
+  const ctx: ArtifactContext = {
+    contractId: alvo.contractId,
+    network: opts.network,
+    generatedAt: opts.generatedAt,
+    lang: opts.lang,
+    spec: {
+      contractId: alvo.contractId, network: opts.network,
+      // Sem isto o hash que `resolveTarget` acabou de ler on-chain ficava no caminho e o
+      // documento saía dizendo "hash do WASM não capturado na geração" sobre um alvo por
+      // contract id — o campo que prende o plano ao binário que está no ar.
+      wasmHash: alvo.wasmHash,
+      wasmBytes: wasm.length, observed: [], warnings: [],
+      analyzedFile: alvo.analyzedFile,
+      ...specParts,
+    },
+    analysis,
+    findings,
+    gaps: lacunas(findings),
+    storageKeys: inferStorageKeys(wasm).map((k) => ({ key: k.key, confidence: k.confidence })),
+  };
+
+  ctx.dfd = buildDfd(ctx);
+
+  // Nível B só existe para contrato deployado: um .wasm local não tem histórico on-chain.
+  // As três situações abaixo são afirmações DIFERENTES e o documento precisa distingui-las:
+  // pulada de propósito, tentada e falhada, ou coletada (mesmo que com zero ocorrências).
+  if (opts.offline || alvo.analyzedFile) {
+    ctx.offline = true;
+  } else {
+    opts.onProgress?.(M.observando(opts.network));
+    try {
+      ctx.observations = await comPrazo(observe(opts.target, opts.network), opts.timeoutMs ?? 0);
+      const w = ctx.observations.window;
+      opts.onProgress?.(
+        M.janela(w.ledgers, w.approxHours, w.fromLedger, w.toLedger, Boolean(w.insufficient), ctx.observations.events.length),
+      );
+    } catch (e) {
+      // Engolir a falha faria o documento sair byte a byte igual ao de `--offline` e
+      // afirmar que nenhuma janela foi coletada — falso sobre a tentativa.
+      ctx.observationError = String((e as Error)?.message ?? e);
+      opts.onProgress?.(M.falhou(ctx.observationError));
+    }
+  }
+
+  ctx.monitors = deriveMonitors(ctx);
+  return ctx;
+}

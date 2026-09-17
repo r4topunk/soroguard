@@ -1,0 +1,9 @@
+node_modules
+dist
+*.log
+out/
+.rev/
+*.bak
+scripts/prototipos/
+.DS_Store
+*.tgz

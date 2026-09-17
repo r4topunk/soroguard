@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+      - name: Calibrate detectors against the committed corpus
+        run: |
+          node scripts/calibrate.mjs | tee calibration-output.txt
+          if grep -qE '\b0 contratos\b' calibration-output.txt; then
+            echo "::error::calibrate.mjs reported 0 contratos - corpus not being read, failing the build"
+            exit 1
+          fi
+
+      - name: Verify npm package contents
+        run: |
+          npm pack --dry-run 2>&1 | tee pack-output.txt
+          if ! grep -q 'dist/cli.js' pack-output.txt; then
+            echo "::error::npm pack does not include dist/cli.js"
+            exit 1
+          fi

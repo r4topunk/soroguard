@@ -1,0 +1,722 @@
+{
+ "contracts": 71,
+ "entrypoints": 1726,
+ "totalFindings": 145,
+ "unsound": 22,
+ "byClass": [
+  [
+   "initialization-front-running",
+   35
+  ],
+  [
+   "silent-mutation",
+   48
+  ],
+  [
+   "unauthenticated-state-mutation",
+   17
+  ],
+  [
+   "vulnerable-sdk",
+   32
+  ],
+  [
+   "archival-risk",
+   9
+  ],
+  [
+   "host-prng-in-value-path",
+   3
+  ],
+  [
+   "write-before-auth",
+   1
+  ]
+ ],
+ "rows": [
+  {
+   "id": "CA526Y2NQWGWVVQ7RFFPGAZMU66PSYJ3UC2MTVAV4ZU7OM5BOPHDXUSG",
+   "eps": 14,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE",
+   "eps": 76,
+   "findings": 7,
+   "sound": "sound",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV",
+   "eps": 34,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL",
+   "eps": 51,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CAG5LRYQ5JVEUI5TEID72EYOVX44TTUJT5BQR2J6J77FH65PCCFAJDDH",
+   "eps": 20,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
+   "eps": 27,
+   "findings": 4,
+   "sound": "approximate",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP",
+   "eps": 22,
+   "findings": 6,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "unauthenticated-state-mutation",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CAUCMIN5KSXEVZ7NMXR3LZATGD5EFIEUI5XWTFLYRO2R5OTXI22WE5JX",
+   "eps": 72,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CB4YHF4ESRJ4XZRXISLXSUZTYY6YPBPZ73MZWSTUWY46DKYW7IGLHGF7",
+   "eps": 8,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CBBMQBNHB2FYVZYV7VNHOJHUMTFJLR4PUMRVQYNW6RHIKZO2NQMIBUCV",
+   "eps": 96,
+   "findings": 6,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBGHLRSX5D5YMBPNK4ZGMUTJUHFIT7YGXGJURM5LFNZ7B6WNSXLGS26M",
+   "eps": 16,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CBIJBDNZNF4X35BJ4FFZWCDBSCKOP5NB4PLG4SNENRMLAPYG4P5FM6VN",
+   "eps": 36,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC",
+   "eps": 23,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBOOCGZSVRSZFRE4U2NWR2B4RXYVJWRCBTGOUD2JPI2TDJPWMTJX7FZP",
+   "eps": 23,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBQDHNBFBZYE4MKPWBSJOPIYLW4SFSXAXUTSXJN76GNKYVYPCKWC6QUK",
+   "eps": 75,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBU4Y7CJFOUZZE3QBOXTKM54UTUYW3SDJWTNMDGJBNCR5HS5UCEKV3BE",
+   "eps": 85,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CBUKYTAUPRPWZ76AENDIGCAYF2FUFKV37YZEPYJSYICMBPBPJBPKKZCR",
+   "eps": 14,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CBXRNDQMAJFG4VUKMKFEMFS75UUXE2SPSNV4LEEFCSNBCN66PYRWBKXO",
+   "eps": 25,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T",
+   "eps": 23,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CC2RBGYNCFBCVENIDL5BFBWPH4OUZM2UA3OD2K2N54GLMWCC4KWPVAGO",
+   "eps": 52,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CCA2ZJP5BVRXYTQH4FAGHCAUMRYCXVC4CRYC2NXHWMR7TIVX36U7F5HR",
+   "eps": 44,
+   "findings": 3,
+   "sound": "approximate",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CCG5EWFY2KCWWYYEIUMIRG6WSAQFLDR5QE5FMCWY25N36XA5GYTCPQWR",
+   "eps": 43,
+   "findings": 3,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CCKXBE5GKJOCE7IKL64HLYKW3IJSUPVOLC4CS77GQT5QQHDZLDYV3DFT",
+   "eps": 7,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CCNXGPE4AQCSNEBZO3XJDKKDI3CRLYMVS6UWBBTVDLALLWMJEXBORQ2A",
+   "eps": 88,
+   "findings": 7,
+   "sound": "sound",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CCPGFQUTSEHDIQODRE3GJDNE64A35HZ32L7LPDN7GXOCIYNBJSMS6V6B",
+   "eps": 8,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CCR2CH4GQVCZHG7CHFVMNANCK45CU5DVKXZIIITDZQAU3CEJZ7RQH2MQ",
+   "eps": 57,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CCWKKEQTMGBNLHDKSYWFOA4IFFR2GT6FRYSHIXQQGNVB64AQHCFXLL4S",
+   "eps": 15,
+   "findings": 4,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDB2WMKQQNVZMEBY7Q7GZ5C7E7IAFSNMZ7GGVD6WKTCEWK7XOIAVZSAP",
+   "eps": 8,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDFQDDPUPAM3XPGORHDOEFRNLMKOH3N3X6XTXNLSXJQXIU3RVCM3OPEP",
+   "eps": 15,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDW44DSP5EQBFC2IC5ZIRFC5WIZDMKL34IUFI6FZ6TIE446C6YAT5YTS",
+   "eps": 30,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZK2GAJEAPYDZNOKGD5TPQGYFNMFM3FIAK477PWE3GTIDXFUEWK2VYP",
+   "eps": 45,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZK3J2WHJZCOBYQGSZLO5A5JQPBME7FS7XUUOXLH6ZXJI54OI7VGKL2",
+   "eps": 9,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZLY4F55MKMF2VYGH7WUG2L3G7LHAPQZVXB26I3NRPWRNLSIG252M4J",
+   "eps": 30,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZM6LBMHOIRBVPZ5LSOC4FTEKCHPR36AQ7FBVG5DZBOCFB6VIIW6SMH",
+   "eps": 1,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZMFMUH7HVOPAGB7OQNOYGLDB7GDXWIDGOUCJ4JJIUVHJ2VGOXCTB3Y",
+   "eps": 2,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZMKHLBRLEHES62KSQE6UJBHV4H2VHJ6K2D6I6K66NJBMROSRLPOLC7",
+   "eps": 4,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZNDUHNU2AEE3QKOKF426LHUNKSP6MGVE6ZIESMWEMV3X7JHWEPRPC5",
+   "eps": 4,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZNIEA5FLJY2L4BWFW3P6WPFYWQNZTNP6ED2K5UHD5PNYTIMNFZDD3W",
+   "eps": 13,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZNS3D6IBGG67MONBRGVMVTNNCQMUTOF26LWUK65LYYNMZBNJGDXHJL",
+   "eps": 12,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZODZRL6H22246N3EZQWSBWSOAMZL2IQAFBENAGVQARHOA2OF2UNRRS",
+   "eps": 19,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZPBJQBSHQ2ZJD3X2QKCMQ2TLJTNRVEHSVEVKONGO2OWE2U7UTG6OWA",
+   "eps": 6,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "archival-risk"
+   ]
+  },
+  {
+   "id": "CDZPLSD426ZCR5XB2D7HDYEDEAS5KYZFX6JEPLFY7QOQ3QHE6DHMECW7",
+   "eps": 20,
+   "findings": 3,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZQL342GLFT7YSMERGG773ID5NI4EOOSLX767PC2GZ2IDAA3KIYFAOZ",
+   "eps": 26,
+   "findings": 5,
+   "sound": "approximate",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZQQVQIMPYPM5253TTFVS67P72NYH63GNJRFNMWEYW55ARM6YCBSAGB",
+   "eps": 14,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZSNHZRYOILJ5FD6RS7QTJ2ATOP7BSF3RAE23PRWVEXKB6LQIDBEYKH",
+   "eps": 18,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk"
+   ]
+  },
+  {
+   "id": "CDZSYODEHRJPMN63RDARHEH5NUOXWC76MFM67MEAZYOWY2YJC34OS2Z4",
+   "eps": 11,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk"
+   ]
+  },
+  {
+   "id": "CDZTSNUNWHLHWJUCLXOJSIAY3R775HVOAVWKRDRC7JD5OAZQJ7YKBVYH",
+   "eps": 29,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "host-prng-in-value-path"
+   ]
+  },
+  {
+   "id": "CDZUARXOX4VR52D7IDPHWNGJLCLCCCT34S7RXUBTHQK5TYNM2JJOZ24H",
+   "eps": 16,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZUVTDHSJWR2R72ROKLAQ6UQNAC76LRC7NEEDFDZVOKYBKO3EZQ6HUN",
+   "eps": 10,
+   "findings": 4,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZVLCYR6BOGYFBAVQ6ED7KE2F5O55H56MU2JI7PXQFGT6IWK524PBF6",
+   "eps": 33,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "unauthenticated-state-mutation",
+    "silent-mutation",
+    "host-prng-in-value-path"
+   ]
+  },
+  {
+   "id": "CDZVN44DSYZVL72N5DPKEZA6VI5XNUCVC53NAQK27MQC7SCNGC7UMIP3",
+   "eps": 16,
+   "findings": 3,
+   "sound": "approximate",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZVUPNQYESKVQ37OCXM2GSSMIBASKGOZROZQ4NVT6ZS5RO7EGAXAWLL",
+   "eps": 19,
+   "findings": 6,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk",
+    "host-prng-in-value-path",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZW732K6OHLOB5ADFROAZOBOK4CXGUI2KF7XCPXN2XBMWLQASORKWRI",
+   "eps": 2,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZWKWCUR3EFLM232U7XJAL57ANBPYDXPXKEWVKPBBPM6D4VVDCFO6O2",
+   "eps": 12,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "archival-risk"
+   ]
+  },
+  {
+   "id": "CDZWRA73MM4UNWYZ5FOYFQEZ5PLIZMSRHTBLS2PORBHXWOJOV7AFTUT3",
+   "eps": 4,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "archival-risk"
+   ]
+  },
+  {
+   "id": "CDZXIBNLQVH34KV3MUTC2IDA5WNUQAAW32BHKEXCMFS5Q2U3HXVPUV4J",
+   "eps": 26,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZXPDSVEBSJ3NA6DAOTNFWXXSIBUIVHTSIANIXYFXVPEL7G2DOX4TV3",
+   "eps": 24,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZXT57GTUKVGJKWHLHOIA7QARC2S2HP2S3P54LOBEHNM3DUPQJ55K54",
+   "eps": 16,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZY2KUSSHPQ6XGJPNQQXGTIKZ2ZEC6QLHGHAWPO5CDV4R2ZDZ74QAM6",
+   "eps": 1,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZY3HGY7CVWVDEBGEQJVXCJHDOHQXXNAOEH6HHGL7O4OTVWIDC4OK7Z",
+   "eps": 1,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZY62OKIPJAB4HH44BI6PPYO4NGFQV7INDJH4KU6V6RNNSLCTUX3SCS",
+   "eps": 15,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZYHEYIBNTPB6ULCDBJYTJX2VLVDTT2G5HHGU25W5PUC6MUVKEI4JJ4",
+   "eps": 5,
+   "findings": 1,
+   "sound": "approximate",
+   "classes": [
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZYMSGG2VWJMDVOJRQGSLT2XK4W7VAFIT7URPUXT7GMG26L5QN5GEW6",
+   "eps": 17,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZYURXE4FQUWQDFLON3TO5HI5HSRX6LH5XQNM3DI5U7ZNLMRMZECMTU",
+   "eps": 3,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZYWZKRHHCR4CNUEE473WGLNMU5RDWSN4JANDJOADCZ765TM5VQIIOQ",
+   "eps": 12,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "archival-risk",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZZ5HUOBL2QGELMWQMWNIPMA4TWYMX3KWMA6PWQL3OUTBDXUOL742T5",
+   "eps": 15,
+   "findings": 1,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running"
+   ]
+  },
+  {
+   "id": "CDZZBYKYOIH7PBRQ4X6I6B5XQ2364U2RWMSZ24PCLMXBWSDBBKSTCDWM",
+   "eps": 51,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation"
+   ]
+  },
+  {
+   "id": "CDZZCDIGTTUJFYNX56L3MGV54GM26MTXVA2FUW4J7VQIE53QUMKGSWSA",
+   "eps": 13,
+   "findings": 0,
+   "sound": "sound",
+   "classes": []
+  },
+  {
+   "id": "CDZZM7RQ6AIVNQFTRUNJ36RJRZNJOTYEWJX44GJUDIBPXXQSXEJYLNH6",
+   "eps": 6,
+   "findings": 2,
+   "sound": "approximate",
+   "classes": [
+    "write-before-auth",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZZWCAJPNDVX4YKLWHHKIUJQBSSANBTZZVLZE62S4ZQV5DCMAVIQ7PP",
+   "eps": 27,
+   "findings": 3,
+   "sound": "sound",
+   "classes": [
+    "initialization-front-running",
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  },
+  {
+   "id": "CDZZZADKQPBUEBSTLON3M666R2Z73EMERP5KUBY6YETA76XZKSLSFDD4",
+   "eps": 12,
+   "findings": 2,
+   "sound": "sound",
+   "classes": [
+    "silent-mutation",
+    "vulnerable-sdk"
+   ]
+  }
+ ]
+}

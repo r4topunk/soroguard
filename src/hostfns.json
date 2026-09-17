@@ -1,0 +1,1063 @@
+{
+  "source": "stellar/rs-soroban-env soroban-env-common/env.json",
+  "fetchedAt": "2026-09-17",
+  "fns": {
+    "x._": {
+      "name": "log_from_linear_memory",
+      "module": "context",
+      "category": "context"
+    },
+    "x.0": {
+      "name": "obj_cmp",
+      "module": "context",
+      "category": "context"
+    },
+    "x.1": {
+      "name": "contract_event",
+      "module": "context",
+      "category": "event"
+    },
+    "x.2": {
+      "name": "get_ledger_version",
+      "module": "context",
+      "category": "context"
+    },
+    "x.3": {
+      "name": "get_ledger_sequence",
+      "module": "context",
+      "category": "context"
+    },
+    "x.4": {
+      "name": "get_ledger_timestamp",
+      "module": "context",
+      "category": "context"
+    },
+    "x.5": {
+      "name": "fail_with_error",
+      "module": "context",
+      "category": "context"
+    },
+    "x.6": {
+      "name": "get_ledger_network_id",
+      "module": "context",
+      "category": "context"
+    },
+    "x.7": {
+      "name": "get_current_contract_address",
+      "module": "context",
+      "category": "context"
+    },
+    "x.8": {
+      "name": "get_max_live_until_ledger",
+      "module": "context",
+      "category": "context"
+    },
+    "i._": {
+      "name": "obj_from_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.0": {
+      "name": "obj_to_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.1": {
+      "name": "obj_from_i64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.2": {
+      "name": "obj_to_i64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.3": {
+      "name": "obj_from_u128_pieces",
+      "module": "int",
+      "category": "int"
+    },
+    "i.4": {
+      "name": "obj_to_u128_lo64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.5": {
+      "name": "obj_to_u128_hi64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.6": {
+      "name": "obj_from_i128_pieces",
+      "module": "int",
+      "category": "int"
+    },
+    "i.7": {
+      "name": "obj_to_i128_lo64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.8": {
+      "name": "obj_to_i128_hi64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.9": {
+      "name": "obj_from_u256_pieces",
+      "module": "int",
+      "category": "int"
+    },
+    "i.a": {
+      "name": "u256_val_from_be_bytes",
+      "module": "int",
+      "category": "int"
+    },
+    "i.b": {
+      "name": "u256_val_to_be_bytes",
+      "module": "int",
+      "category": "int"
+    },
+    "i.c": {
+      "name": "obj_to_u256_hi_hi",
+      "module": "int",
+      "category": "int"
+    },
+    "i.d": {
+      "name": "obj_to_u256_hi_lo",
+      "module": "int",
+      "category": "int"
+    },
+    "i.e": {
+      "name": "obj_to_u256_lo_hi",
+      "module": "int",
+      "category": "int"
+    },
+    "i.f": {
+      "name": "obj_to_u256_lo_lo",
+      "module": "int",
+      "category": "int"
+    },
+    "i.g": {
+      "name": "obj_from_i256_pieces",
+      "module": "int",
+      "category": "int"
+    },
+    "i.h": {
+      "name": "i256_val_from_be_bytes",
+      "module": "int",
+      "category": "int"
+    },
+    "i.i": {
+      "name": "i256_val_to_be_bytes",
+      "module": "int",
+      "category": "int"
+    },
+    "i.j": {
+      "name": "obj_to_i256_hi_hi",
+      "module": "int",
+      "category": "int"
+    },
+    "i.k": {
+      "name": "obj_to_i256_hi_lo",
+      "module": "int",
+      "category": "int"
+    },
+    "i.l": {
+      "name": "obj_to_i256_lo_hi",
+      "module": "int",
+      "category": "int"
+    },
+    "i.m": {
+      "name": "obj_to_i256_lo_lo",
+      "module": "int",
+      "category": "int"
+    },
+    "i.n": {
+      "name": "u256_add",
+      "module": "int",
+      "category": "int"
+    },
+    "i.o": {
+      "name": "u256_sub",
+      "module": "int",
+      "category": "int"
+    },
+    "i.p": {
+      "name": "u256_mul",
+      "module": "int",
+      "category": "int"
+    },
+    "i.q": {
+      "name": "u256_div",
+      "module": "int",
+      "category": "int"
+    },
+    "i.r": {
+      "name": "u256_rem_euclid",
+      "module": "int",
+      "category": "int"
+    },
+    "i.s": {
+      "name": "u256_pow",
+      "module": "int",
+      "category": "int"
+    },
+    "i.t": {
+      "name": "u256_shl",
+      "module": "int",
+      "category": "int"
+    },
+    "i.u": {
+      "name": "u256_shr",
+      "module": "int",
+      "category": "int"
+    },
+    "i.v": {
+      "name": "i256_add",
+      "module": "int",
+      "category": "int"
+    },
+    "i.w": {
+      "name": "i256_sub",
+      "module": "int",
+      "category": "int"
+    },
+    "i.x": {
+      "name": "i256_mul",
+      "module": "int",
+      "category": "int"
+    },
+    "i.y": {
+      "name": "i256_div",
+      "module": "int",
+      "category": "int"
+    },
+    "i.z": {
+      "name": "i256_rem_euclid",
+      "module": "int",
+      "category": "int"
+    },
+    "i.A": {
+      "name": "i256_pow",
+      "module": "int",
+      "category": "int"
+    },
+    "i.B": {
+      "name": "i256_shl",
+      "module": "int",
+      "category": "int"
+    },
+    "i.C": {
+      "name": "i256_shr",
+      "module": "int",
+      "category": "int"
+    },
+    "i.D": {
+      "name": "timepoint_obj_from_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.E": {
+      "name": "timepoint_obj_to_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.F": {
+      "name": "duration_obj_from_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.G": {
+      "name": "duration_obj_to_u64",
+      "module": "int",
+      "category": "int"
+    },
+    "i.H": {
+      "name": "u256_checked_add",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.I": {
+      "name": "u256_checked_sub",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.J": {
+      "name": "u256_checked_mul",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.K": {
+      "name": "u256_checked_pow",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.L": {
+      "name": "i256_checked_add",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.M": {
+      "name": "i256_checked_sub",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.N": {
+      "name": "i256_checked_mul",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "i.O": {
+      "name": "i256_checked_pow",
+      "module": "int",
+      "category": "int",
+      "since": 26
+    },
+    "m._": {
+      "name": "map_new",
+      "module": "map",
+      "category": "map"
+    },
+    "m.0": {
+      "name": "map_put",
+      "module": "map",
+      "category": "map"
+    },
+    "m.1": {
+      "name": "map_get",
+      "module": "map",
+      "category": "map"
+    },
+    "m.2": {
+      "name": "map_del",
+      "module": "map",
+      "category": "map"
+    },
+    "m.3": {
+      "name": "map_len",
+      "module": "map",
+      "category": "map"
+    },
+    "m.4": {
+      "name": "map_has",
+      "module": "map",
+      "category": "map"
+    },
+    "m.5": {
+      "name": "map_key_by_pos",
+      "module": "map",
+      "category": "map"
+    },
+    "m.6": {
+      "name": "map_val_by_pos",
+      "module": "map",
+      "category": "map"
+    },
+    "m.7": {
+      "name": "map_keys",
+      "module": "map",
+      "category": "map"
+    },
+    "m.8": {
+      "name": "map_values",
+      "module": "map",
+      "category": "map"
+    },
+    "m.9": {
+      "name": "map_new_from_linear_memory",
+      "module": "map",
+      "category": "map"
+    },
+    "m.a": {
+      "name": "map_unpack_to_linear_memory",
+      "module": "map",
+      "category": "map"
+    },
+    "m.b": {
+      "name": "sparse_map_new_from_linear_memory",
+      "module": "map",
+      "category": "map",
+      "since": 28
+    },
+    "m.c": {
+      "name": "sparse_map_unpack_to_linear_memory",
+      "module": "map",
+      "category": "map",
+      "since": 28
+    },
+    "v._": {
+      "name": "vec_new",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.0": {
+      "name": "vec_put",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.1": {
+      "name": "vec_get",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.2": {
+      "name": "vec_del",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.3": {
+      "name": "vec_len",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.4": {
+      "name": "vec_push_front",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.5": {
+      "name": "vec_pop_front",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.6": {
+      "name": "vec_push_back",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.7": {
+      "name": "vec_pop_back",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.8": {
+      "name": "vec_front",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.9": {
+      "name": "vec_back",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.a": {
+      "name": "vec_insert",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.b": {
+      "name": "vec_append",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.c": {
+      "name": "vec_slice",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.d": {
+      "name": "vec_first_index_of",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.e": {
+      "name": "vec_last_index_of",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.f": {
+      "name": "vec_binary_search",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.g": {
+      "name": "vec_new_from_linear_memory",
+      "module": "vec",
+      "category": "vec"
+    },
+    "v.h": {
+      "name": "vec_unpack_to_linear_memory",
+      "module": "vec",
+      "category": "vec"
+    },
+    "l._": {
+      "name": "put_contract_data",
+      "module": "ledger",
+      "category": "storage-write"
+    },
+    "l.0": {
+      "name": "has_contract_data",
+      "module": "ledger",
+      "category": "storage-read"
+    },
+    "l.1": {
+      "name": "get_contract_data",
+      "module": "ledger",
+      "category": "storage-read"
+    },
+    "l.2": {
+      "name": "del_contract_data",
+      "module": "ledger",
+      "category": "storage-write"
+    },
+    "l.3": {
+      "name": "create_contract",
+      "module": "ledger",
+      "category": "deploy"
+    },
+    "l.4": {
+      "name": "create_asset_contract",
+      "module": "ledger",
+      "category": "deploy"
+    },
+    "l.5": {
+      "name": "upload_wasm",
+      "module": "ledger",
+      "category": "deploy"
+    },
+    "l.6": {
+      "name": "update_current_contract_wasm",
+      "module": "ledger",
+      "category": "upgrade"
+    },
+    "l.7": {
+      "name": "extend_contract_data_ttl",
+      "module": "ledger",
+      "category": "ttl"
+    },
+    "l.8": {
+      "name": "extend_current_contract_instance_and_code_ttl",
+      "module": "ledger",
+      "category": "ttl"
+    },
+    "l.9": {
+      "name": "extend_contract_instance_and_code_ttl",
+      "module": "ledger",
+      "category": "ttl"
+    },
+    "l.a": {
+      "name": "get_contract_id",
+      "module": "ledger",
+      "category": "ledger"
+    },
+    "l.b": {
+      "name": "get_asset_contract_id",
+      "module": "ledger",
+      "category": "ledger"
+    },
+    "l.c": {
+      "name": "extend_contract_instance_ttl",
+      "module": "ledger",
+      "category": "ttl",
+      "since": 21
+    },
+    "l.d": {
+      "name": "extend_contract_code_ttl",
+      "module": "ledger",
+      "category": "ttl",
+      "since": 21
+    },
+    "l.e": {
+      "name": "create_contract_with_constructor",
+      "module": "ledger",
+      "category": "deploy",
+      "since": 22
+    },
+    "l.f": {
+      "name": "extend_contract_data_ttl_v2",
+      "module": "ledger",
+      "category": "ttl",
+      "since": 26
+    },
+    "l.g": {
+      "name": "extend_contract_instance_and_code_ttl_v2",
+      "module": "ledger",
+      "category": "ttl",
+      "since": 26
+    },
+    "l.h": {
+      "name": "create_executable_tag",
+      "module": "ledger",
+      "category": "ledger",
+      "since": 28
+    },
+    "l.i": {
+      "name": "create_external_ref_contract",
+      "module": "ledger",
+      "category": "deploy",
+      "since": 28
+    },
+    "l.j": {
+      "name": "update_current_contract_executable_ref",
+      "module": "ledger",
+      "category": "upgrade",
+      "since": 28
+    },
+    "d._": {
+      "name": "call",
+      "module": "call",
+      "category": "cross-call"
+    },
+    "d.0": {
+      "name": "try_call",
+      "module": "call",
+      "category": "cross-call"
+    },
+    "b._": {
+      "name": "serialize_to_bytes",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.0": {
+      "name": "deserialize_from_bytes",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.1": {
+      "name": "bytes_copy_to_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.2": {
+      "name": "bytes_copy_from_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.3": {
+      "name": "bytes_new_from_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.4": {
+      "name": "bytes_new",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.5": {
+      "name": "bytes_put",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.6": {
+      "name": "bytes_get",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.7": {
+      "name": "bytes_del",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.8": {
+      "name": "bytes_len",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.9": {
+      "name": "bytes_push",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.a": {
+      "name": "bytes_pop",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.b": {
+      "name": "bytes_front",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.c": {
+      "name": "bytes_back",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.d": {
+      "name": "bytes_insert",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.e": {
+      "name": "bytes_append",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.f": {
+      "name": "bytes_slice",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.g": {
+      "name": "string_copy_to_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.h": {
+      "name": "symbol_copy_to_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.i": {
+      "name": "string_new_from_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.j": {
+      "name": "symbol_new_from_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.k": {
+      "name": "string_len",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.l": {
+      "name": "symbol_len",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.m": {
+      "name": "symbol_index_in_linear_memory",
+      "module": "buf",
+      "category": "buf"
+    },
+    "b.n": {
+      "name": "string_to_bytes",
+      "module": "buf",
+      "category": "buf",
+      "since": 23
+    },
+    "b.o": {
+      "name": "bytes_to_string",
+      "module": "buf",
+      "category": "buf",
+      "since": 23
+    },
+    "c._": {
+      "name": "compute_hash_sha256",
+      "module": "crypto",
+      "category": "crypto"
+    },
+    "c.0": {
+      "name": "verify_sig_ed25519",
+      "module": "crypto",
+      "category": "crypto"
+    },
+    "c.1": {
+      "name": "compute_hash_keccak256",
+      "module": "crypto",
+      "category": "crypto"
+    },
+    "c.2": {
+      "name": "recover_key_ecdsa_secp256k1",
+      "module": "crypto",
+      "category": "crypto"
+    },
+    "c.3": {
+      "name": "verify_sig_ecdsa_secp256r1",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 21
+    },
+    "c.4": {
+      "name": "bls12_381_check_g1_is_in_subgroup",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.5": {
+      "name": "bls12_381_g1_add",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.6": {
+      "name": "bls12_381_g1_mul",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.7": {
+      "name": "bls12_381_g1_msm",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.8": {
+      "name": "bls12_381_map_fp_to_g1",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.9": {
+      "name": "bls12_381_hash_to_g1",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.a": {
+      "name": "bls12_381_check_g2_is_in_subgroup",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.b": {
+      "name": "bls12_381_g2_add",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.c": {
+      "name": "bls12_381_g2_mul",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.d": {
+      "name": "bls12_381_g2_msm",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.e": {
+      "name": "bls12_381_map_fp2_to_g2",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.f": {
+      "name": "bls12_381_hash_to_g2",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.g": {
+      "name": "bls12_381_multi_pairing_check",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.h": {
+      "name": "bls12_381_fr_add",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.i": {
+      "name": "bls12_381_fr_sub",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.j": {
+      "name": "bls12_381_fr_mul",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.k": {
+      "name": "bls12_381_fr_pow",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.l": {
+      "name": "bls12_381_fr_inv",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 22
+    },
+    "c.m": {
+      "name": "bn254_g1_add",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 25
+    },
+    "c.n": {
+      "name": "bn254_g1_mul",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 25
+    },
+    "c.o": {
+      "name": "bn254_multi_pairing_check",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 25
+    },
+    "c.p": {
+      "name": "poseidon_permutation",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 25
+    },
+    "c.q": {
+      "name": "poseidon2_permutation",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 25
+    },
+    "c.r": {
+      "name": "bn254_g1_msm",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.s": {
+      "name": "bn254_fr_add",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.t": {
+      "name": "bn254_fr_sub",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.u": {
+      "name": "bn254_fr_mul",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.v": {
+      "name": "bn254_fr_pow",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.w": {
+      "name": "bn254_fr_inv",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.x": {
+      "name": "bls12_381_g1_is_on_curve",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.y": {
+      "name": "bls12_381_g2_is_on_curve",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "c.z": {
+      "name": "bn254_g1_is_on_curve",
+      "module": "crypto",
+      "category": "crypto",
+      "since": 26
+    },
+    "a._": {
+      "name": "require_auth_for_args",
+      "module": "address",
+      "category": "auth"
+    },
+    "a.0": {
+      "name": "require_auth",
+      "module": "address",
+      "category": "auth"
+    },
+    "a.1": {
+      "name": "strkey_to_address",
+      "module": "address",
+      "category": "address"
+    },
+    "a.2": {
+      "name": "address_to_strkey",
+      "module": "address",
+      "category": "address"
+    },
+    "a.3": {
+      "name": "authorize_as_curr_contract",
+      "module": "address",
+      "category": "auth-delegate"
+    },
+    "a.4": {
+      "name": "get_address_from_muxed_address",
+      "module": "address",
+      "category": "address",
+      "since": 23
+    },
+    "a.5": {
+      "name": "get_id_from_muxed_address",
+      "module": "address",
+      "category": "address",
+      "since": 23
+    },
+    "a.6": {
+      "name": "get_address_executable",
+      "module": "address",
+      "category": "address",
+      "since": 23
+    },
+    "a.7": {
+      "name": "strkey_to_muxed_address",
+      "module": "address",
+      "category": "address",
+      "since": 26
+    },
+    "a.8": {
+      "name": "muxed_address_to_strkey",
+      "module": "address",
+      "category": "address",
+      "since": 26
+    },
+    "a.9": {
+      "name": "get_delegated_signers_for_current_auth_check",
+      "module": "address",
+      "category": "auth-introspect",
+      "since": 27
+    },
+    "a.a": {
+      "name": "delegate_account_auth",
+      "module": "address",
+      "category": "auth-delegate",
+      "since": 27
+    },
+    "t._": {
+      "name": "dummy0",
+      "module": "test",
+      "category": "test"
+    },
+    "t.0": {
+      "name": "protocol_gated_dummy",
+      "module": "test",
+      "category": "test",
+      "since": 19,
+      "until": 19
+    },
+    "p._": {
+      "name": "prng_reseed",
+      "module": "prng",
+      "category": "prng"
+    },
+    "p.0": {
+      "name": "prng_bytes_new",
+      "module": "prng",
+      "category": "prng"
+    },
+    "p.1": {
+      "name": "prng_u64_in_inclusive_range",
+      "module": "prng",
+      "category": "prng"
+    },
+    "p.2": {
+      "name": "prng_vec_shuffle",
+      "module": "prng",
+      "category": "prng"
+    }
+  }
+}
