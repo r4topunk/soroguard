@@ -25,292 +25,160 @@
  *     bytecode (nível A) é outra coisa: que o entrypoint alcança `contract_event`. Sem esse
  *     fato A, nenhuma correspondência de nome vira monitor de evento.
  *
- * Todo texto que sai deste módulo passa pela tabela `M`. O idioma é resolvido na LEITURA da
- * chave, então `setLang` feito pelo CLI antes de renderizar vale para as derivações também.
+ * Todo texto que sai deste módulo passa pela tabela `M`.
  */
 
 import type { ArtifactContext, ExecutableMonitor, Monitor, ObservedEvent } from "./artifact.ts";
 import type { Finding, Tier } from "./detect.ts";
 import { emitsEvent, writesStorage } from "./analyze.ts";
 import { EVENT_FNS, UPGRADE_FNS } from "./hostfns.ts";
-import { msgs, plural } from "./i18n.ts";
+import { plural } from "./text.ts";
 
-const M = msgs({
-  en: {
-    LACUNA: "⟨to be defined — not derivable from the binary⟩",
-    /** separador entre filtros de tópicos alternativos */
-    ou: " or ",
-    semTrafego:
-      " ⚠ No event of any topic was observed for this contract during the window — absence of traffic, not a traffic profile",
-    coletaFalhou: (e: string) =>
-      `tier B collection FAILED: ${e} — the baseline is missing because the RPC call did not complete, not because the contract is idle`,
-    coletaPulada: "tier B collection not run (offline / local target)",
-    semJanela: "no observation window was collected for this contract",
-    baselinePorHash: (h: string) =>
-      `instance wasm hash when this plan was generated: \`${h}\`. Any different value is a code change.`,
-    /**
-     * Caso (c) do SHIP-05: a janela pode até existir — este monitor não passa pelo stream de
-     * eventos, então o baseline dele não é observação nenhuma, é um valor a registrar.
-     */
-    baselineFillIn: (oque: string, l: string) =>
-      `this monitor is not event-based; its baseline is the current on-chain value (${oque}), to be recorded at plan approval — ${l}. This is a fill-in, not an observation gap: no \`getEvents\` window would produce it.`,
-    valorHash: "current instance wasm hash",
-    valorChaves: "current value of the storage keys, read via getLedgerEntries",
-    valorTx: "current invocation profile of the entrypoint, read by transaction inspection",
-    hashAPreencher: "⟨to be filled: current instance wasm hash⟩",
-    baselineNaoEstabelecido: (motivo: string) => `baseline not established: ${motivo}.`,
-    janelaInsuficiente: (n: number, h: string) =>
-      `insufficient window: ${n} ledgers (~${h} h) observed — too short for an honest baseline.`,
-    janela: (n: number, h: string, de: number, ate: number) => `window of ${n} ledgers (~${h} h, ledgers ${de}–${ate})`,
-    zeroEmissoes: (rot: string, janela: string, confirmado: boolean) =>
-      `0 emissions of ${rot} in the ${janela}${confirmado ? " — topic declared in the spec and confirmed as never observed" : ""}. ` +
-      "An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold.",
-    emissoes: (n: number, rot: string, janela: string, taxa: string, chaves: number) =>
-      `${n} emissions of ${rot} in the ${janela} ⇒ ${taxa}/h` +
-      (chaves > 1 ? ` (sum of the ${chaves} candidate topics — the attribution is not unique)` : "") + ".",
-    alcance: (ep: string, saltos: string) => `(A) \`${ep}\` reaches contract_event in ${saltos} hop(s)`,
-    viaHelper: (ep: string) =>
-      `. (C) ⚠ the path is longer than 2 hops and probably goes through a shared helper: the emission may sit on a branch \`${ep}\` never executes — an event monitor here may never fire, by design. Confirm before switching it on.`,
-    eventoTexto: (como: string, rot: string) => `${como} — event with topics ${rot}`,
-    ambiguo: (n: number, nomes: string) =>
-      ` (attribution ambiguous between ${n} spec events: ${nomes} — the filter covers all of them)`,
-    avisoHelperCurto: " ⚠ emission reached through a shared helper, may never occur along this path",
-    atribuicaoSpec: (alcance: string, nomes: string, ambiguo: boolean, n: number) =>
-      `${alcance} The topics and the segment count come from the \`contractspecv0\` section of the WASM itself. ` +
-      `(C) the event↔entrypoint link is by name (${nomes})` +
-      (ambiguo
-        ? ` — AMBIGUOUS ATTRIBUTION between ${n} events, all included as alternative filters; confirm by hand which one belongs to the entrypoint.`
-        : "."),
-    eventoObservadoTexto: (como: string, rot: string) =>
-      `${como} — event with topics ${rot} (topic arity not derivable: see the filter note)`,
-    atribuicaoObservada: (alcance: string, l: string) =>
-      `${alcance} (B) the topic is not in the spec; it was read from the on-chain stream. ` +
-      `(C) the link to the entrypoint is by name. ${l}: how many segments the event has — ` +
-      "the observed stream only preserved the first one, and `getEvents` matches on the exact list length.",
-    invocacaoTexto: (ep: string, motivo: string) =>
-      `invocation of \`${ep}\` ${motivo} — visible in the transaction's InvokeHostFunction operation, read by transaction inspection, not in the event stream`,
-    invocacaoAtribuicao:
-      "(A) the entrypoint is exported by the WASM; the invocation shows up in the operation whether or not the contract emits an event.",
-    /* observáveis por classe */
-    comoInit: "initialization executed",
-    motivoInit: "by an address that is not the deployer",
-    comoMutacao: "state mutation executed",
-    motivoMutacao: (l: string) =>
-      `by an address outside the operational allowlist (the allowlist is not derivable from the binary: ${l})`,
-    upgradeLedgerTexto:
-      "wasm hash change on the contract instance executable (ContractData/ContractInstance ledger entry, read via getLedgerEntries — not through getEvents)",
-    upgradeAtribuicao: (ep: string, saltos: string) =>
-      `(A) \`${ep}\` reaches the self-code-replacement family in ${saltos} hop(s); the effect is the hash change on the instance.`,
-    comoUpgrade: "upgrade announced",
-    delegacaoTexto: (ep: string) =>
-      `sub-invocation receiving the contract's identity from \`${ep}\` — visible in the transaction's authorization tree (SorobanAuthorizationEntry), read by transaction inspection`,
-    delegacaoAtribuicao: (ep: string) =>
-      `(A) \`${ep}\` reaches authorize_as_curr_contract, which grants authorization instead of checking it.`,
-    comoDelegacao: "delegation accompanied by an event",
-    archivalTexto:
-      "`liveUntilLedger` of the contract's persistent/instance entries approaching the current ledger (read via getLedgerEntries)",
-    archivalAtribuicao: "(A) no entrypoint of the contract reaches the extend_*_ttl family; the TTL only decreases.",
-    cessacaoTexto: (topic: string) =>
-      `the flow of [${topic}] stopping, which today is continuous — archived state leaves the contract inoperable`,
-    cessacaoAtribuicao:
-      "(B) rate measured in the observed window; the absence is measurable precisely because there is measured flow.",
-    comoPrng: "drawn result published",
-    motivoPrng: "together with the ledger it was submitted in",
-    sdkTexto: "instance wasm hash staying equal to the vulnerable binary (read via getLedgerEntries)",
-    sdkAtribuicao:
-      "(A) the SDK version is recorded in this binary's `contractmetav0` custom section; it only changes with an upgrade.",
-    silenciosaTexto: (n: number, chaves: string, mudos: string[]) =>
-      `diff of the ${n} ${plural(n, "key", "keys")} inferred from the data section (non-exhaustive; entries keyed by runtime arguments are not listed) (${chaves}) across ledgers (getLedgerEntries) — ` +
-      `with no event, the state diff is the only possible reading${mudos.length ? `; silent entrypoints: ${mudos.join(", ")}` : ""}`,
-    silenciosaAtribuicao: (mudos: string[], l: string) =>
-      `(A) ${mudos.length ? `${mudos.join(", ")} ${plural(mudos.length, "reaches", "reach")}` : "the entrypoints in the finding reach"} put_contract_data and ${mudos.length === 1 ? "does" : "do"} not reach contract_event. ` +
-      "(A) the keys were extracted from the bytecode as arguments of storage host functions, with `certain` confidence. " +
-      `(C) which of those keys each silent entrypoint writes is NOT derivable from this context — the monitor covers the whole set and may alert on changes from other paths. ${l}: the durability of each entry, which is a runtime argument and decides the ledger key to query.`,
-    comoFallback: "execution of the affected entrypoint",
-    motivoFallback: "whose execution is what materializes this threat",
-    /* respostas */
-    respInit: (ep: string) =>
-      `Check that the emitter and the recorded roles match the legitimate deployment. If they diverge, treat the instance as compromised, pause integrations that trust its roles, and verify in source whether ${ep} is guarded against re-initialization — if it is not, redeploy; the bytecode does not show the guard.`,
-    respMutacao: (ep: string) =>
-      `Identify the caller of ${ep} and the state it changed; if it is not a known operator, trigger the contract pause if one exists and freeze integrations that read that state.`,
-    respWriteBeforeAuth: "Informational alert: review the body flagged in the finding before acting. No automated response.",
-    respUpgrade:
-      "Compare the new wasm hash against the expected release. A divergence is unauthorized code replacement and subsumes every other control — escalate immediately.",
-    respDelegacao: (ep: string) =>
-      `Open the transaction's authorization tree and check which sub-invocation ${ep} lent the contract's identity to; confirm the scope is the one the design intends.`,
-    respArchival:
-      "Renew the TTL of the entries before the threshold. Archival is unavailability, not loss: restoration is possible, but the contract stays inoperable until then.",
-    respSdk:
-      "Confirm in the source whether the advisory's trigger condition (evidence C of the finding) exists in this contract; if it does, recompile with the fixed version and run the upgrade.",
-    respPrng: (ep: string) =>
-      `Compare the submission ledger of the ${ep} invocations against the drawn results: concentration in a single ledger, or repetition by the same address within it, indicates ledger picking. If the PRNG use is cosmetic, the finding closes and the monitor goes away.`,
-    respSilenciosa:
-      "Reconcile the observed state against what the backend expects. The right response is a design change, not an on-call one: add events to the entrypoints listed.",
-    respPadrao: (classe: string, ep: string, l: string) =>
-      `Open the ${classe} finding on ${ep} and the transaction that fired the alert before taking any action. Specific procedure: ${l}`,
-    /* gatilhos */
-    gatilhoHash: (ref: string) =>
-      `Periodic check (getLedgerEntries): the wasm hash of the instance executable differs from the hash recorded at plan approval — ${ref}. ` +
-      "While it stays equal, the state described in the finding still holds; when it changes, the new binary needs to be re-analyzed.",
-    alvoLinha: "of the observable on this row",
-    alvoTopicos: (rot: string) => `of ${rot}`,
-    gatilhoTaxa: (limiar: number, horas: number, alvo: string) =>
-      `More than ${limiar} ${plural(limiar, "occurrence", "occurrences")} ${alvo} in ${horas} h (3× the rate measured in the observed window).`,
-    gatilhoAusencia: (horas: number, alvo: string) => `No occurrence ${alvo} for ${horas} h in a row.`,
-    gatilhoQualquerB: (alvo: string, nunca: boolean) =>
-      `Any occurrence ${alvo}${nunca ? ", which never happened in the observed window" : ""}.`,
-    gatilhoQualquerSemBaseline: (alvo: string, base: string) =>
-      `Any occurrence ${alvo}. No numeric threshold can be set — ${base}`,
-    /**
-     * O diff de estado só vira consulta real quando a durabilidade é conhecida: ela é
-     * argumento de runtime e entra na chave de ledger. Sem ela não há o que consultar, e o
-     * gatilho tem de dizer isso na própria linha — o blocker de baseline já diz o mesmo.
-     */
-    gatilhoDurabilidade:
-      " Durability ⟨to be filled: temporary / persistent / instance⟩ — needed to build the ledger key.",
-    /* nota do filtro executável */
-    notaSpec:
-      "Topics read from `contractspecv0` in the WASM itself, with one `*` per parameter declared in TopicList. " +
-      "On the wire each segment goes as a base64 ScVal symbol — the raw string is rejected with `invalid parameters`; " +
-      "`*` matches exactly one segment and the list must have the same length as the event's (measured on mainnet). ",
-    notaSemSpec: (chaves: string, l: string) =>
-      `No topic filter ON PURPOSE: the topic [${chaves}] was read from the on-chain stream and is not in the spec, ` +
-      `so the event's segment count is not derivable (${l}) — and a filter of the wrong length silently returns zero. ` +
-      `Filter by contractId and drop client-side everything whose first topic is not [${chaves}]. `,
-    notaAlternativos: (n: number) =>
-      `${n} alternative filters: the event↔entrypoint attribution is by name and is not unique — confirm which one before switching it on. `,
-    notaBaseline: (tier: string, texto: string) => `Baseline (${tier}): ${texto}`,
-  },
-  pt: {
-    LACUNA: "⟨a definir — não derivável do binário⟩",
-    ou: " ou ",
-    semTrafego:
-      " ⚠ Nenhum evento de nenhum tópico foi observado neste contrato na janela — ausência de tráfego, não perfil de tráfego",
-    coletaFalhou: (e: string) =>
-      `coleta de nível B FALHOU: ${e} — baseline ausente porque a chamada de RPC não completou, não porque o contrato está inativo`,
-    coletaPulada: "coleta de nível B não executada (offline / alvo local)",
-    semJanela: "nenhuma janela de observação foi coletada para este contrato",
-    baselinePorHash: (h: string) =>
-      `wasm hash da instância na geração deste plano: \`${h}\`. Qualquer valor diferente é mudança de código.`,
-    baselineFillIn: (oque: string, l: string) =>
-      `este monitor não é baseado em evento; o baseline dele é o valor on-chain corrente (${oque}), a registrar na aprovação do plano — ${l}. Isso é preenchimento, não lacuna de observação: nenhuma janela de \`getEvents\` o produziria.`,
-    valorHash: "wasm hash corrente da instância",
-    valorChaves: "valor corrente das chaves de storage, lido via getLedgerEntries",
-    valorTx: "perfil corrente de invocação do entrypoint, lido por inspeção da transação",
-    hashAPreencher: "⟨a preencher: wasm hash corrente da instância⟩",
-    baselineNaoEstabelecido: (motivo: string) => `baseline não estabelecido: ${motivo}.`,
-    janelaInsuficiente: (n: number, h: string) =>
-      `janela insuficiente: ${n} ledgers (~${h} h) observados — curto demais para um baseline honesto.`,
-    janela: (n: number, h: string, de: number, ate: number) => `janela de ${n} ledgers (~${h} h, ledgers ${de}–${ate})`,
-    zeroEmissoes: (rot: string, janela: string, confirmado: boolean) =>
-      `0 emissões de ${rot} na ${janela}${confirmado ? " — tópico declarado no spec e confirmado como não observado" : ""}. ` +
-      "Um zero observado é medição, mas sustenta só gatilho de qualquer ocorrência, não limiar de taxa.",
-    emissoes: (n: number, rot: string, janela: string, taxa: string, chaves: number) =>
-      `${n} emissões de ${rot} na ${janela} ⇒ ${taxa}/h` +
-      (chaves > 1 ? ` (soma dos ${chaves} tópicos candidatos — a atribuição não é única)` : "") + ".",
-    alcance: (ep: string, saltos: string) => `(A) \`${ep}\` alcança contract_event em ${saltos} salto(s)`,
-    viaHelper: (ep: string) =>
-      `. (C) ⚠ o caminho tem mais de 2 saltos e provavelmente passa por helper compartilhado: a emissão pode estar num ramo que \`${ep}\` nunca executa — um monitor de evento aqui pode nunca disparar por desenho. Confirmar antes de ligar.`,
-    eventoTexto: (como: string, rot: string) => `${como} — evento com tópicos ${rot}`,
-    ambiguo: (n: number, nomes: string) =>
-      ` (atribuição ambígua entre ${n} eventos do spec: ${nomes} — o filtro cobre todos)`,
-    avisoHelperCurto: " ⚠ emissão alcançada via helper compartilhado, pode nunca ocorrer por este caminho",
-    atribuicaoSpec: (alcance: string, nomes: string, ambiguo: boolean, n: number) =>
-      `${alcance} Os tópicos e o nº de segmentos vêm da seção \`contractspecv0\` do próprio WASM. ` +
-      `(C) a ligação evento↔entrypoint é por nome (${nomes})` +
-      (ambiguo
-        ? ` — ATRIBUIÇÃO AMBÍGUA entre ${n} eventos, todos incluídos como filtros alternativos; confirmar manualmente qual é o do entrypoint.`
-        : "."),
-    eventoObservadoTexto: (como: string, rot: string) =>
-      `${como} — evento com tópicos ${rot} (aridade do tópico não derivável: ver nota do filtro)`,
-    atribuicaoObservada: (alcance: string, l: string) =>
-      `${alcance} (B) o tópico não está no spec; foi lido do stream on-chain. ` +
-      `(C) a ligação com o entrypoint é por nome. ${l}: quantos segmentos o evento tem — ` +
-      "o stream observado só preservou o primeiro, e o `getEvents` casa pelo comprimento exato da lista.",
-    invocacaoTexto: (ep: string, motivo: string) =>
-      `invocação de \`${ep}\` ${motivo} — visível na operação InvokeHostFunction da transação, lida por inspeção da transação, não no stream de eventos`,
-    invocacaoAtribuicao:
-      "(A) o entrypoint é exportado pelo WASM; a invocação aparece na operação, independentemente de o contrato emitir evento.",
-    comoInit: "inicialização executada",
-    motivoInit: "por endereço que não é o do deploy",
-    comoMutacao: "mutação de estado executada",
-    motivoMutacao: (l: string) => `por endereço fora da allowlist operacional (a allowlist não é derivável do binário: ${l})`,
-    upgradeLedgerTexto:
-      "mudança do wasm hash na executável da instância do contrato (ledger entry ContractData/ContractInstance, lida via getLedgerEntries — não por getEvents)",
-    upgradeAtribuicao: (ep: string, saltos: string) =>
-      `(A) \`${ep}\` alcança a família de troca do próprio código em ${saltos} salto(s); o efeito é a troca do hash na instância.`,
-    comoUpgrade: "upgrade anunciado",
-    delegacaoTexto: (ep: string) =>
-      `sub-invocação recebendo a identidade do contrato a partir de \`${ep}\` — visível na árvore de autorização (SorobanAuthorizationEntry) da transação, lida por inspeção da transação`,
-    delegacaoAtribuicao: (ep: string) =>
-      `(A) \`${ep}\` alcança authorize_as_curr_contract, que concede autorização em vez de verificá-la.`,
-    comoDelegacao: "delegação acompanhada de evento",
-    archivalTexto:
-      "`liveUntilLedger` das entradas persistentes/instance do contrato se aproximando do ledger corrente (leitura via getLedgerEntries)",
-    archivalAtribuicao: "(A) nenhum entrypoint do contrato alcança a família extend_*_ttl; o TTL só decresce.",
-    cessacaoTexto: (topic: string) =>
-      `cessação do fluxo de [${topic}], que hoje ocorre de forma contínua — estado arquivado deixa o contrato inoperante`,
-    cessacaoAtribuicao: "(B) taxa medida na janela observada; a ausência é aferível justamente porque existe fluxo medido.",
-    comoPrng: "resultado sorteado publicado",
-    motivoPrng: "junto do ledger em que foi submetida",
-    sdkTexto: "wasm hash da instância permanecendo igual ao binário vulnerável (leitura via getLedgerEntries)",
-    sdkAtribuicao:
-      "(A) a versão do SDK está gravada na custom section `contractmetav0` deste binário; ela só muda com upgrade.",
-    silenciosaTexto: (n: number, chaves: string, mudos: string[]) =>
-      `diff das ${n} ${plural(n, "chave inferida", "chaves inferidas")} da seção de dados (não exaustivo; entradas cuja chave é argumento de runtime não estão listadas) (${chaves}) entre ledgers (getLedgerEntries) — ` +
-      `sem evento, o diff de estado é a única leitura possível${mudos.length ? `; entrypoints mudos: ${mudos.join(", ")}` : ""}`,
-    silenciosaAtribuicao: (mudos: string[], l: string) =>
-      `(A) ${mudos.length ? `${mudos.join(", ")} ${plural(mudos.length, "alcança", "alcançam")}` : "os entrypoints do achado alcançam"} put_contract_data e não ${mudos.length === 1 ? "alcança" : "alcançam"} contract_event. ` +
-      "(A) as chaves foram extraídas do bytecode como argumento de host function de storage, com confiança `certain`. " +
-      `(C) qual dessas chaves cada entrypoint mudo escreve NÃO é derivável deste contexto — o monitor cobre o conjunto inteiro e pode alertar por mudanças de outros caminhos. ${l}: a durabilidade de cada entrada, que é argumento de runtime e define a chave de ledger a consultar.`,
-    comoFallback: "execução do entrypoint afetado",
-    motivoFallback: "cuja execução é o que materializa esta ameaça",
-    respInit: (ep: string) =>
-      `Conferir se o emissor e os papéis gravados conferem com o deploy legítimo. Se divergirem, tratar a instância como comprometida, pausar integrações que confiam nesses papéis e verificar no fonte se ${ep} tem guarda contra reinicialização — se não tiver, redeployar; o bytecode não mostra a guarda.`,
-    respMutacao: (ep: string) =>
-      `Identificar o invocador de ${ep} e o estado alterado; se não for operador conhecido, acionar a pausa do contrato caso exista e congelar integrações que leem esse estado.`,
-    respWriteBeforeAuth: "Alerta informativo: revisar o corpo apontado no achado antes de agir. Sem resposta automática.",
-    respUpgrade:
-      "Comparar o novo wasm hash com a release esperada. Divergência é substituição de código não autorizada e subsome qualquer outro controle — escalar imediatamente.",
-    respDelegacao: (ep: string) =>
-      `Abrir a árvore de autorização da transação e verificar a qual sub-invocação ${ep} emprestou a identidade do contrato; confirmar que o escopo é o previsto pelo desenho.`,
-    respArchival:
-      "Renovar o TTL das entradas antes do limiar. Arquivamento é indisponibilidade, não perda: a restauração é possível, mas o contrato fica inoperante até lá.",
-    respSdk:
-      "Confirmar no fonte se a condição de disparo do advisory (evidência C do achado) existe neste contrato; se existir, recompilar com a versão corrigida e executar o upgrade.",
-    respPrng: (ep: string) =>
-      `Comparar o ledger de submissão das invocações de ${ep} com os resultados sorteados: concentração num mesmo ledger, ou repetição pelo mesmo endereço dentro dele, indica escolha de ledger. Se o uso do PRNG for cosmético, o achado se fecha e o monitor sai.`,
-    respSilenciosa:
-      "Reconciliar o estado observado com o esperado pelo backend. A resposta certa é de desenho, não de plantão: adicionar evento aos entrypoints listados.",
-    respPadrao: (classe: string, ep: string, l: string) =>
-      `Abrir o achado ${classe} sobre ${ep} e a transação que disparou o alerta antes de qualquer ação. Procedimento específico: ${l}`,
-    gatilhoHash: (ref: string) =>
-      `Verificação periódica (getLedgerEntries): o wasm hash da executável da instância difere do hash registrado na aprovação do plano — ${ref}. ` +
-      "Enquanto for igual, o estado descrito no achado continua valendo; quando mudar, o novo binário precisa ser reanalisado.",
-    alvoLinha: "do observável desta linha",
-    alvoTopicos: (rot: string) => `de ${rot}`,
-    gatilhoTaxa: (limiar: number, horas: number, alvo: string) =>
-      `Mais de ${limiar} ${plural(limiar, "ocorrência", "ocorrências")} ${alvo} em ${horas} h (3× a taxa medida na janela observada).`,
-    gatilhoAusencia: (horas: number, alvo: string) => `Nenhuma ocorrência ${alvo} por ${horas} h seguidas.`,
-    gatilhoQualquerB: (alvo: string, nunca: boolean) =>
-      `Qualquer ocorrência ${alvo}${nunca ? ", que nunca ocorreu na janela observada" : ""}.`,
-    gatilhoQualquerSemBaseline: (alvo: string, base: string) =>
-      `Qualquer ocorrência ${alvo}. Limiar numérico não pode ser fixado — ${base}`,
-    gatilhoDurabilidade:
-      " Durabilidade ⟨a preencher: temporary / persistent / instance⟩ — necessária para montar a chave de ledger.",
-    notaSpec:
-      "Tópicos lidos de `contractspecv0` no próprio WASM, com um `*` por parâmetro declarado em TopicList. " +
-      "No transporte cada segmento vai como ScVal símbolo em base64 — a string crua é recusada com `invalid parameters`; " +
-      "`*` casa exatamente um segmento e a lista precisa ter o mesmo comprimento da do evento (medido em mainnet). ",
-    notaSemSpec: (chaves: string, l: string) =>
-      `Sem filtro de tópicos DE PROPÓSITO: o tópico [${chaves}] foi lido do stream on-chain e não está no spec, ` +
-      `então o número de segmentos do evento não é derivável (${l}) — e filtro com comprimento errado devolve zero em silêncio. ` +
-      `Filtrar por contractId e descartar no cliente tudo cujo primeiro tópico não seja [${chaves}]. `,
-    notaAlternativos: (n: number) =>
-      `${n} filtros alternativos: a atribuição evento↔entrypoint é por nome e não é única — confirmar qual antes de ligar. `,
-    notaBaseline: (tier: string, texto: string) => `Baseline (${tier}): ${texto}`,
-  },
-});
+const M = {
+  LACUNA: "⟨to be defined — not derivable from the binary⟩",
+  /** separador entre filtros de tópicos alternativos */
+  ou: " or ",
+  semTrafego:
+    " ⚠ No event of any topic was observed for this contract during the window — absence of traffic, not a traffic profile",
+  coletaFalhou: (e: string) =>
+    `tier B collection FAILED: ${e} — the baseline is missing because the RPC call did not complete, not because the contract is idle`,
+  coletaPulada: "tier B collection not run (offline / local target)",
+  semJanela: "no observation window was collected for this contract",
+  baselinePorHash: (h: string) =>
+    `instance wasm hash when this plan was generated: \`${h}\`. Any different value is a code change.`,
+  /**
+   * Caso (c) do SHIP-05: a janela pode até existir — este monitor não passa pelo stream de
+   * eventos, então o baseline dele não é observação nenhuma, é um valor a registrar.
+   */
+  baselineFillIn: (oque: string, l: string) =>
+    `this monitor is not event-based; its baseline is the current on-chain value (${oque}), to be recorded at plan approval — ${l}. This is a fill-in, not an observation gap: no \`getEvents\` window would produce it.`,
+  valorHash: "current instance wasm hash",
+  valorChaves: "current value of the storage keys, read via getLedgerEntries",
+  valorTx: "current invocation profile of the entrypoint, read by transaction inspection",
+  hashAPreencher: "⟨to be filled: current instance wasm hash⟩",
+  baselineNaoEstabelecido: (motivo: string) => `baseline not established: ${motivo}.`,
+  janelaInsuficiente: (n: number, h: string) =>
+    `insufficient window: ${n} ledgers (~${h} h) observed — too short for an honest baseline.`,
+  janela: (n: number, h: string, de: number, ate: number) => `window of ${n} ledgers (~${h} h, ledgers ${de}–${ate})`,
+  zeroEmissoes: (rot: string, janela: string, confirmado: boolean) =>
+    `0 emissions of ${rot} in the ${janela}${confirmado ? " — topic declared in the spec and confirmed as never observed" : ""}. ` +
+    "An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold.",
+  emissoes: (n: number, rot: string, janela: string, taxa: string, chaves: number) =>
+    `${n} emissions of ${rot} in the ${janela} ⇒ ${taxa}/h` +
+    (chaves > 1 ? ` (sum of the ${chaves} candidate topics — the attribution is not unique)` : "") + ".",
+  alcance: (ep: string, saltos: string) => `(A) \`${ep}\` reaches contract_event in ${saltos} hop(s)`,
+  viaHelper: (ep: string) =>
+    `. (C) ⚠ the path is longer than 2 hops and probably goes through a shared helper: the emission may sit on a branch \`${ep}\` never executes — an event monitor here may never fire, by design. Confirm before switching it on.`,
+  eventoTexto: (como: string, rot: string) => `${como} — event with topics ${rot}`,
+  ambiguo: (n: number, nomes: string) =>
+    ` (attribution ambiguous between ${n} spec events: ${nomes} — the filter covers all of them)`,
+  avisoHelperCurto: " ⚠ emission reached through a shared helper, may never occur along this path",
+  atribuicaoSpec: (alcance: string, nomes: string, ambiguo: boolean, n: number) =>
+    `${alcance} The topics and the segment count come from the \`contractspecv0\` section of the WASM itself. ` +
+    `(C) the event↔entrypoint link is by name (${nomes})` +
+    (ambiguo
+      ? ` — AMBIGUOUS ATTRIBUTION between ${n} events, all included as alternative filters; confirm by hand which one belongs to the entrypoint.`
+      : "."),
+  eventoObservadoTexto: (como: string, rot: string) =>
+    `${como} — event with topics ${rot} (topic arity not derivable: see the filter note)`,
+  atribuicaoObservada: (alcance: string, l: string) =>
+    `${alcance} (B) the topic is not in the spec; it was read from the on-chain stream. ` +
+    `(C) the link to the entrypoint is by name. ${l}: how many segments the event has — ` +
+    "the observed stream only preserved the first one, and `getEvents` matches on the exact list length.",
+  invocacaoTexto: (ep: string, motivo: string) =>
+    `invocation of \`${ep}\` ${motivo} — visible in the transaction's InvokeHostFunction operation, read by transaction inspection, not in the event stream`,
+  invocacaoAtribuicao:
+    "(A) the entrypoint is exported by the WASM; the invocation shows up in the operation whether or not the contract emits an event.",
+  /* observáveis por classe */
+  comoInit: "initialization executed",
+  motivoInit: "by an address that is not the deployer",
+  comoMutacao: "state mutation executed",
+  motivoMutacao: (l: string) =>
+    `by an address outside the operational allowlist (the allowlist is not derivable from the binary: ${l})`,
+  upgradeLedgerTexto:
+    "wasm hash change on the contract instance executable (ContractData/ContractInstance ledger entry, read via getLedgerEntries — not through getEvents)",
+  upgradeAtribuicao: (ep: string, saltos: string) =>
+    `(A) \`${ep}\` reaches the self-code-replacement family in ${saltos} hop(s); the effect is the hash change on the instance.`,
+  comoUpgrade: "upgrade announced",
+  delegacaoTexto: (ep: string) =>
+    `sub-invocation receiving the contract's identity from \`${ep}\` — visible in the transaction's authorization tree (SorobanAuthorizationEntry), read by transaction inspection`,
+  delegacaoAtribuicao: (ep: string) =>
+    `(A) \`${ep}\` reaches authorize_as_curr_contract, which grants authorization instead of checking it.`,
+  comoDelegacao: "delegation accompanied by an event",
+  archivalTexto:
+    "`liveUntilLedger` of the contract's persistent/instance entries approaching the current ledger (read via getLedgerEntries)",
+  archivalAtribuicao: "(A) no entrypoint of the contract reaches the extend_*_ttl family; the TTL only decreases.",
+  cessacaoTexto: (topic: string) =>
+    `the flow of [${topic}] stopping, which today is continuous — archived state leaves the contract inoperable`,
+  cessacaoAtribuicao:
+    "(B) rate measured in the observed window; the absence is measurable precisely because there is measured flow.",
+  comoPrng: "drawn result published",
+  motivoPrng: "together with the ledger it was submitted in",
+  sdkTexto: "instance wasm hash staying equal to the vulnerable binary (read via getLedgerEntries)",
+  sdkAtribuicao:
+    "(A) the SDK version is recorded in this binary's `contractmetav0` custom section; it only changes with an upgrade.",
+  silenciosaTexto: (n: number, chaves: string, mudos: string[]) =>
+    `diff of the ${n} ${plural(n, "key", "keys")} inferred from the data section (non-exhaustive; entries keyed by runtime arguments are not listed) (${chaves}) across ledgers (getLedgerEntries) — ` +
+    `with no event, the state diff is the only possible reading${mudos.length ? `; silent entrypoints: ${mudos.join(", ")}` : ""}`,
+  silenciosaAtribuicao: (mudos: string[], l: string) =>
+    `(A) ${mudos.length ? `${mudos.join(", ")} ${plural(mudos.length, "reaches", "reach")}` : "the entrypoints in the finding reach"} put_contract_data and ${mudos.length === 1 ? "does" : "do"} not reach contract_event. ` +
+    "(A) the keys were extracted from the bytecode as arguments of storage host functions, with `certain` confidence. " +
+    `(C) which of those keys each silent entrypoint writes is NOT derivable from this context — the monitor covers the whole set and may alert on changes from other paths. ${l}: the durability of each entry, which is a runtime argument and decides the ledger key to query.`,
+  comoFallback: "execution of the affected entrypoint",
+  motivoFallback: "whose execution is what materializes this threat",
+  /* respostas */
+  respInit: (ep: string) =>
+    `Check that the emitter and the recorded roles match the legitimate deployment. If they diverge, treat the instance as compromised, pause integrations that trust its roles, and verify in source whether ${ep} is guarded against re-initialization — if it is not, redeploy; the bytecode does not show the guard.`,
+  respMutacao: (ep: string) =>
+    `Identify the caller of ${ep} and the state it changed; if it is not a known operator, trigger the contract pause if one exists and freeze integrations that read that state.`,
+  respWriteBeforeAuth: "Informational alert: review the body flagged in the finding before acting. No automated response.",
+  respUpgrade:
+    "Compare the new wasm hash against the expected release. A divergence is unauthorized code replacement and subsumes every other control — escalate immediately.",
+  respDelegacao: (ep: string) =>
+    `Open the transaction's authorization tree and check which sub-invocation ${ep} lent the contract's identity to; confirm the scope is the one the design intends.`,
+  respArchival:
+    "Renew the TTL of the entries before the threshold. Archival is unavailability, not loss: restoration is possible, but the contract stays inoperable until then.",
+  respSdk:
+    "Confirm in the source whether the advisory's trigger condition (evidence C of the finding) exists in this contract; if it does, recompile with the fixed version and run the upgrade.",
+  respPrng: (ep: string) =>
+    `Compare the submission ledger of the ${ep} invocations against the drawn results: concentration in a single ledger, or repetition by the same address within it, indicates ledger picking. If the PRNG use is cosmetic, the finding closes and the monitor goes away.`,
+  respSilenciosa:
+    "Reconcile the observed state against what the backend expects. The right response is a design change, not an on-call one: add events to the entrypoints listed.",
+  respPadrao: (classe: string, ep: string, l: string) =>
+    `Open the ${classe} finding on ${ep} and the transaction that fired the alert before taking any action. Specific procedure: ${l}`,
+  /* gatilhos */
+  gatilhoHash: (ref: string) =>
+    `Periodic check (getLedgerEntries): the wasm hash of the instance executable differs from the hash recorded at plan approval — ${ref}. ` +
+    "While it stays equal, the state described in the finding still holds; when it changes, the new binary needs to be re-analyzed.",
+  alvoLinha: "of the observable on this row",
+  alvoTopicos: (rot: string) => `of ${rot}`,
+  gatilhoTaxa: (limiar: number, horas: number, alvo: string) =>
+    `More than ${limiar} ${plural(limiar, "occurrence", "occurrences")} ${alvo} in ${horas} h (3× the rate measured in the observed window).`,
+  gatilhoAusencia: (horas: number, alvo: string) => `No occurrence ${alvo} for ${horas} h in a row.`,
+  gatilhoQualquerB: (alvo: string, nunca: boolean) =>
+    `Any occurrence ${alvo}${nunca ? ", which never happened in the observed window" : ""}.`,
+  gatilhoQualquerSemBaseline: (alvo: string, base: string) =>
+    `Any occurrence ${alvo}. No numeric threshold can be set — ${base}`,
+  /**
+   * O diff de estado só vira consulta real quando a durabilidade é conhecida: ela é
+   * argumento de runtime e entra na chave de ledger. Sem ela não há o que consultar, e o
+   * gatilho tem de dizer isso na própria linha — o blocker de baseline já diz o mesmo.
+   */
+  gatilhoDurabilidade:
+    " Durability ⟨to be filled: temporary / persistent / instance⟩ — needed to build the ledger key.",
+  /* nota do filtro executável */
+  notaSpec:
+    "Topics read from `contractspecv0` in the WASM itself, with one `*` per parameter declared in TopicList. " +
+    "On the wire each segment goes as a base64 ScVal symbol — the raw string is rejected with `invalid parameters`; " +
+    "`*` matches exactly one segment and the list must have the same length as the event's (measured on mainnet). ",
+  notaSemSpec: (chaves: string, l: string) =>
+    `No topic filter ON PURPOSE: the topic [${chaves}] was read from the on-chain stream and is not in the spec, ` +
+    `so the event's segment count is not derivable (${l}) — and a filter of the wrong length silently returns zero. ` +
+    `Filter by contractId and drop client-side everything whose first topic is not [${chaves}]. `,
+  notaAlternativos: (n: number) =>
+    `${n} alternative filters: the event↔entrypoint attribution is by name and is not unique — confirm which one before switching it on. `,
+  notaBaseline: (tier: string, texto: string) => `Baseline (${tier}): ${texto}`,
+};
 
 /**
  * Marcador único para tudo que a ferramenta honestamente não sabe. O renderizador o conta.

@@ -4,7 +4,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { analyzeModule, type ModuleAnalysis } from "../src/analyze.ts";
 import { inferStorageKeys } from "../src/storagekeys.ts";
 import { buildDfd } from "../src/render/dfd.ts";
-import { setLang } from "../src/i18n.ts";
 import { detect } from "../src/detect.ts";
 import { STORAGE_WRITE_FNS } from "../src/hostfns.ts";
 import type { ArtifactContext, Dfd } from "../src/artifact.ts";
@@ -287,12 +286,8 @@ test("nenhuma aresta afirma host function nua — toda positiva é rotulada como
   }
 });
 
-/**
- * O diagrama sai em inglês por padrão; `--lang pt` continua produzindo o texto equivalente.
- * O estado de idioma é global, então o teste o devolve para `en` com `t.after`.
- */
-test("rótulos saem em inglês por padrão e em português com setLang(\"pt\")", (t) => {
-  t.after(() => setLang("en"));
+/** O diagrama sai em inglês. */
+test("rótulos saem em inglês", () => {
   const an = analyzeModule(load(files[0]));
   const ctx = ctxDe("CTESTE", an, [{ key: "Admin", confidence: "certain" }]);
 
@@ -311,22 +306,4 @@ test("rótulos saem em inglês por padrão e em português com setLang(\"pt\")",
   }
   assert.ok(!/stops being proof/.test(en.mermaid), "o diagrama ainda apresenta a negativa como prova");
   assert.deepEqual(erros(en), []);
-
-  setLang("pt");
-  const pt = buildDfd(ctx);
-  assert.ok(pt.mermaid.includes("data-flow diagram derivado do WASM deployado"), "cabeçalho em português ausente");
-  assert.ok(pt.mermaid.includes("%% legenda: alcança X n ="), "legenda em português ausente");
-  assert.ok(pt.nodes.some((n) => n.kind === "store" && n.label === "Storage do contrato"), "store em português ausente");
-  assert.ok(pt.nodes.some((n) => n.kind === "store" && n.label === "Admin (certa)"), "chave em português ausente");
-  assert.ok(pt.boundaries.some((b) => b.id === "tb_externo" && b.label.startsWith("Fora do contrato")), "fronteira em português ausente");
-  const abertaPt = pt.boundaries.find((b) => b.id === "tb_aberto");
-  if (abertaPt) {
-    assert.ok(abertaPt.label.includes("nenhum caminho alcança require_auth* neste módulo"), `fronteira aberta sem escopo: ${abertaPt.label}`);
-  }
-  assert.ok(!/deixa de ser prova/.test(pt.mermaid), "o diagrama em português ainda apresenta a negativa como prova");
-  assert.deepEqual(erros(pt), []);
-
-  // Ids de nó e de fronteira são language-neutral: outros módulos casam com eles por regex.
-  assert.deepEqual(en.nodes.map((n) => n.id), pt.nodes.map((n) => n.id));
-  assert.deepEqual(en.boundaries.map((b) => b.id), pt.boundaries.map((b) => b.id));
 });

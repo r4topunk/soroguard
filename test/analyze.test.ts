@@ -4,7 +4,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { analyzeModule, requiresAuth, writesStorage, canUpgradeSelf } from "../src/analyze.ts";
 import { detect, detectFull, lacunas, lerSpec } from "../src/detect.ts";
 import { hostFn, AUTH_FNS, STORAGE_WRITE_FNS, SIG_SCHEME_FNS } from "../src/hostfns.ts";
-import { setLang } from "../src/i18n.ts";
 
 const CORPUS = new URL("../corpus/", import.meta.url).pathname;
 const files = readdirSync(CORPUS).filter((f) => f.endsWith(".wasm"));
@@ -544,31 +543,15 @@ test("write-before-auth titula ordem textual e marca a temporalidade como infer�
   assert.ok(n > 0, "nenhum write-before-auth no corpus — caso não exercitado");
 });
 
-/* ---------- i18n: inglês é o padrão, português sai com setLang("pt") ---------- */
+/* ---------- a saída é em inglês ---------- */
 
-test("com setLang(\"pt\") os mesmos achados saem em português, e o dado não muda", () => {
+test("a supressão por nome de leitura sai em inglês", () => {
   const f = "CA6PUJLBYKZKUEKLZJMKBZLEKP2OTHANDEOWSFF44FTSYLKQPIICCJBE.wasm";
   const wasm = load(f);
   const an = analyzeModule(wasm);
 
   const en = detectFull(an, wasm);
   assert.ok(en.suppressed.some((s) => /read-shaped name/.test(s.motivo)), "inglês é o padrão");
-
-  setLang("pt");
-  try {
-    const pt = detectFull(an, wasm);
-    // texto muda…
-    assert.ok(pt.suppressed.some((s) => /nome de leitura/.test(s.motivo)), "supressão não traduzida");
-    assert.ok(pt.findings.some((x) => /alcança|Lacuna|entrypoints/.test(x.title)), "título não traduzido");
-    // …e o dado não: mesmos ids, classes, severidades e marcadores
-    assert.deepEqual(pt.findings.map((x) => x.id), en.findings.map((x) => x.id));
-    assert.deepEqual(pt.findings.map((x) => x.class), en.findings.map((x) => x.class));
-    assert.deepEqual(pt.findings.map((x) => x.severity), en.findings.map((x) => x.severity));
-    assert.deepEqual(pt.findings.map((x) => x.stride), en.findings.map((x) => x.stride));
-    assert.deepEqual(pt.suppressed.map((s) => s.entrypoint), en.suppressed.map((s) => s.entrypoint));
-  } finally {
-    setLang("en");
-  }
 });
 
 /* ------------------------------------------------------------------ *

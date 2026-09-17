@@ -17,7 +17,6 @@ import { promisify } from "node:util";
 import { explicarErro, resolverRede, ErroDeUso, linhasDeProbe } from "../src/cli.ts";
 import type { ProbeResult } from "../src/probe.ts";
 import { NETWORKS, redactUrl } from "../src/spec.ts";
-import { setLang } from "../src/i18n.ts";
 
 const exec = promisify(execFile);
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname;
@@ -84,7 +83,7 @@ test("invocação nua mostra ajuda e sai 1 — script que checa $status não pod
   assert.match(s.stdout + s.stderr, /Usage: soroguard/);
 });
 
-test("o padrão é inglês: nenhum rótulo em português vaza sem --lang", async () => {
+test("a saída sai em inglês", async () => {
   const s = await rodar(["analyze", ALVO]);
   assert.equal(s.code, 0, s.stderr);
   assert.match(s.stdout, /ENTRYPOINTS/);
@@ -93,29 +92,13 @@ test("o padrão é inglês: nenhum rótulo em português vaza sem --lang", async
   assert.doesNotMatch(s.stdout, /ACHADOS|LACUNAS DECLARADAS|alcançam mutação/);
 });
 
-test("--lang pt traduz a saída e a ajuda, sem mudar o código de saída", async () => {
-  const a = await rodar(["analyze", ALVO, "--lang", "pt"]);
-  assert.equal(a.code, 0, a.stderr);
-  assert.match(a.stdout, /ACHADOS \(\d+\)/);
-  assert.match(a.stdout, /alcançam mutação/);
-
-  const i = await rodar(["inspect", ALVO, "--lang", "pt"]);
-  assert.equal(i.code, 0, i.stderr);
-  assert.match(i.stdout, /SUPERFÍCIE MUTÁVEL/);
-
-  // a ajuda também: ela é construída depois de fixar o idioma
-  const h = await rodar(["analyze", "--help", "--lang", "pt"]);
-  assert.match(h.stdout + h.stderr, /idioma da saída/);
-});
-
-test("--help sai em inglês por padrão, nos dois níveis", async () => {
+test("--help sai em inglês, nos dois níveis", async () => {
   const raiz = await rodar(["--help"]);
   assert.match(raiz.stdout + raiz.stderr, /STRIDE threat model and on-chain monitoring plan/);
   const art = await rodar(["artifact", "--help"]);
   const t = art.stdout + art.stderr;
   assert.match(t, /output directory/);
-  assert.match(t, /output language/);
-  assert.doesNotMatch(t, /diretório de saída|idioma da saída/);
+  assert.doesNotMatch(t, /diretório de saída/);
 });
 
 /* ---------- mapeamento de erro, sem rede ---------- */
@@ -159,20 +142,6 @@ test("SOROGUARD_RPC_URL é o padrão quando -n não é passado", () => {
   } finally {
     if (antes === undefined) delete process.env.SOROGUARD_RPC_URL;
     else process.env.SOROGUARD_RPC_URL = antes;
-  }
-});
-
-test("as mesmas mensagens de erro saem em português com setLang(\"pt\")", () => {
-  setLang("pt");
-  try {
-    const e = Object.assign(new Error("ENOENT"), { code: "ENOENT", path: "/x.wasm" });
-    assert.match(explicarErro(e)!, /^arquivo não encontrado: \/x\.wasm$/);
-    assert.throws(
-      () => resolverRede("futurenet"),
-      (err: unknown) => err instanceof ErroDeUso && /rede desconhecida: "futurenet"/.test((err as Error).message),
-    );
-  } finally {
-    setLang("en");
   }
 });
 
@@ -293,17 +262,6 @@ test("um `open` sai numa linha própria, nomeando o entrypoint", () => {
 
 test("sem sondagem nenhuma o sumário não ganha linha vazia", () => {
   assert.deepEqual(linhasDeProbe([]), []);
-});
-
-test("--lang pt: o sumário da sondagem segue o idioma", () => {
-  try {
-    setLang("pt");
-    const linhas = linhasDeProbe([sonda("guarded", "initialize"), sonda("open", "init_pool")]);
-    assert.match(linhas[0], /2 achados de init sondados: 1 guarded · 1 open · 0 inconclusive/);
-    assert.match(linhas[1], /qualquer endereço pode inicializar esta instância agora/);
-  } finally {
-    setLang("en");
-  }
 });
 
 test("--no-probe é documentado no --help do artifact", async () => {

@@ -52,7 +52,7 @@ import { rpc, scValToNative } from "@stellar/stellar-sdk";
 import { endpointDe, fetchWasm, modelFromEntries, parseSpecEntries } from "./spec.ts";
 import type { Observations, ObservationWindow, ObservedEvent } from "./artifact.ts";
 import type { WindowLimitedBy } from "./model.ts";
-import { msgs, plural } from "./i18n.ts";
+import { plural } from "./text.ts";
 
 export type { WindowLimitedBy } from "./model.ts";
 
@@ -165,22 +165,13 @@ export function ledgerFromCursor(cursor: string | undefined): number | undefined
  * Rótulos de tópico irrecusável. Só o texto muda entre idiomas: o `<` de abertura é o que
  * garante que um rótulo nunca se disfarce de topic real (símbolo Soroban é `[A-Za-z0-9_]`).
  */
-const M = msgs({
-  en: {
-    vazio: "<empty>",
-    indecodificavel: (tag: string) => `<${tag}:undecodable>`,
-    ambiguo: (tag: string) => `<${tag}:ambiguous>`,
-    longo: (tag: string, n: number) => `<${tag}:long:${n}>`,
-    naoImprimivel: (tag: string) => `<${tag}:non-printable>`,
-  },
-  pt: {
-    vazio: "<vazio>",
-    indecodificavel: (tag: string) => `<${tag}:indecodificável>`,
-    ambiguo: (tag: string) => `<${tag}:ambíguo>`,
-    longo: (tag: string, n: number) => `<${tag}:longo:${n}>`,
-    naoImprimivel: (tag: string) => `<${tag}:não-imprimível>`,
-  },
-});
+const M = {
+  vazio: "<empty>",
+  indecodificavel: (tag: string) => `<${tag}:undecodable>`,
+  ambiguo: (tag: string) => `<${tag}:ambiguous>`,
+  longo: (tag: string, n: number) => `<${tag}:long:${n}>`,
+  naoImprimivel: (tag: string) => `<${tag}:non-printable>`,
+};
 
 /**
  * Primeiro topic em forma legível — é ele que casa com `prefixTopics[0]` do contract spec.
@@ -460,27 +451,14 @@ export function declaracaoDeJanela(ledgers: number, horas: number, limitedBy: Wi
   return W.declaracao(ledgers, h, limitedBy);
 }
 
-const W = msgs({
-  en: {
-    declaracao: (n: number, h: string, por: WindowLimitedBy) =>
-      `window of ${n} ${plural(n, "ledger", "ledgers")} (~${h} h) — ` +
-      (por === "request-budget"
-        ? "limited by the RPC request budget, not by retention: the collector could not page the whole " +
-          "retained range in the time allowed, and the contracts that emit most events hit this first; " +
-          "baselines are rates over the observed slice, not totals."
-        : por === "retention"
-          ? "limited by RPC retention."
-          : "bounded by the requested window: neither RPC retention nor the request budget cut it short."),
-  },
-  pt: {
-    declaracao: (n: number, h: string, por: WindowLimitedBy) =>
-      `janela de ${n} ${plural(n, "ledger", "ledgers")} (~${h} h) — ` +
-      (por === "request-budget"
-        ? "limitada pelo orçamento de requisições do RPC, não pela retenção: o coletor não conseguiu " +
-          "paginar toda a faixa retida no tempo permitido, e os contratos que mais emitem eventos batem " +
-          "nisso primeiro; os baselines são taxas sobre a fatia observada, não totais."
-        : por === "retention"
-          ? "limitada pela retenção do RPC."
-          : "limitada pela janela pedida: nem a retenção do RPC nem o orçamento de requisições a cortaram."),
-  },
-});
+const W = {
+  declaracao: (n: number, h: string, por: WindowLimitedBy) =>
+    `window of ${n} ${plural(n, "ledger", "ledgers")} (~${h} h) — ` +
+    (por === "request-budget"
+      ? "limited by the RPC request budget, not by retention: the collector could not page the whole " +
+        "retained range in the time allowed, and the contracts that emit most events hit this first; " +
+        "baselines are rates over the observed slice, not totals."
+      : por === "retention"
+        ? "limited by RPC retention."
+        : "bounded by the requested window: neither RPC retention nor the request budget cut it short."),
+};

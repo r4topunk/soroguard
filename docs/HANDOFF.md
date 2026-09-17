@@ -23,7 +23,7 @@ Os números correntes são **gerados**, nunca escritos à mão. `node scripts/st
 
 | Medida | Valor |
 |---|---|
-| Testes (`pnpm test`) | **215 passando** de 215 |
+| Testes (`pnpm test`) | **208 passando** de 208 |
 | Corpus (`corpus/*.wasm`) | **71 contratos de mainnet**, 1,726 entrypoints, 0 falhas de parse |
 | Achados | **164** no total · **2.3 por contrato** |
 | Por classe | 48 `silent-mutation` · 38 `vulnerable-sdk` · 35 `initialization-front-running` · 13 `self-implemented-signature-verification` · 10 `unauthenticated-state-mutation` · 9 `archival-risk` · 7 `third-party-state-tampering` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
@@ -32,13 +32,13 @@ Os números correntes são **gerados**, nunca escritos à mão. `node scripts/st
 | Rebaixamentos (reportados, não suprimidos) | **4**<br>4 — reaches call/try_call — authorization may live in the callee, severity capped at High |
 | Versão de SDK declarada (`rssdkver`) | **69 de 71** |
 | Em faixa afetada pelo CVE-2026-26267 (High) | **37 dos 69** que declaram versão |
-| Linhas (`src` + `test`) | 16,092 em 31 arquivos |
+| Linhas (`src` + `test`) | 13,546 em 31 arquivos |
 <!-- stats:end -->
 
 | | |
 |---|---|
 | Corpus | 75 contratos de mainnet em `corpus/*.wasm`, **commitados** (não são build artifact; o sha256 de cada arquivo é o wasm hash on-chain) |
-| Idioma da saída | **inglês por padrão**; `--lang pt` opcional. Templates e revisores do SCF são em inglês |
+| Idioma da saída | **inglês, só.** Templates e revisores do SCF são em inglês |
 | Empacotamento | `bin` `soroguard` e `soroguard-mcp`, `files`, `prepublishOnly` com build + testes. `npx soroguard` funciona a partir do tarball |
 | Tempo de construção | **41 minutos** de relógio na sessão inicial (`docs/CRONOMETRO.md`), com 3 subagentes e 1 workflow de 10 agentes, mais uma rodada de revisão/endurecimento |
 | Publicado | **não.** Sem npm, sem repo remoto. O repo está pronto para o primeiro commit; `soroguard` continua livre no registry |
@@ -144,7 +144,7 @@ src/
   storagekeys.ts  infere chaves de storage da data section
   spec.ts         contract spec (funções, erros, eventos + prefixTopics)
   events.ts       ingestão nível B via getEvents + baseline
-  i18n.ts         tabela de mensagens en/pt; `setLang` antes de renderizar, saída determinística
+  text.ts         helpers de texto (`plural`, `listAnd`) compartilhados pelos renderizadores
   artifact.ts     ⚠️ CONTRATO CONGELADO entre os módulos — não editar sem alinhar
   pipeline.ts     monta o ArtifactContext na ordem certa
   render/dfd.ts           data-flow diagram em Mermaid
@@ -160,7 +160,7 @@ src/
 
 **`validate.ts` é a fonte única dos dois checklists.** O veredito que o CLI imprime e a §6 renderizada saem do mesmo objeto — há teste garantindo isso. Se precisar mudar um critério de submissibilidade, é lá, e em nenhum outro lugar.
 
-**`i18n.ts` é a fonte única de texto.** Qualquer string que o usuário lê passa por `msgs({ en, pt })`. Nome de flag, de comando, de rede e chave de JSON são identificadores e ficam de fora.
+**Cada módulo declara sua tabela `M`.** Qualquer string que o usuário lê passa por ela; a saída é só em inglês. Nome de flag, de comando, de rede e chave de JSON são identificadores e ficam de fora.
 
 ## 8. Decisões que parecem estranhas e têm motivo
 

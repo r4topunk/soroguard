@@ -5,16 +5,14 @@ import { buildContext } from "../src/pipeline.ts";
 import { renderThreatModel } from "../src/render/threatmodel.ts";
 import { renderMonitoringPlan } from "../src/render/monitoring.ts";
 import { validateThreatModel, validateMonitoringPlan } from "../src/validate.ts";
-import { setLang, type Lang } from "../src/i18n.ts";
 import type { ArtifactContext, Monitor, Observations } from "../src/artifact.ts";
 
 const CORPUS = new URL("../corpus/", import.meta.url).pathname;
 const amostra = readdirSync(CORPUS).filter((f) => f.endsWith(".wasm")).slice(0, 6);
 const DATA = "2026-09-17";
 
-async function gerar(f: string, lang: Lang = "en") {
-  // `buildContext` aplica `setLang` — o idioma vale para todos os renderizadores.
-  const ctx = await buildContext({ target: CORPUS + f, network: "mainnet", generatedAt: DATA, offline: true, lang });
+async function gerar(f: string) {
+  const ctx = await buildContext({ target: CORPUS + f, network: "mainnet", generatedAt: DATA, offline: true });
   return { ctx, tm: renderThreatModel(ctx), mp: renderMonitoringPlan(ctx) };
 }
 
@@ -134,25 +132,6 @@ test("o threat model sai em inglês por padrão", async () => {
   // Tokens language-neutral: os outros módulos casam com eles por regex.
   assert.ok(tm.includes("What are we working on?") && tm.includes("Did we do a good job?"), "cabeçalhos do template alterados");
   assert.match(tm, /\*\*\[[ABC]\]\*\*|_Sem|No threat derivable/);
-});
-
-test("--lang pt mantém o threat model em português", async (t) => {
-  t.after(() => setLang("en"));
-  const { tm } = await gerar(amostra[0], "pt");
-  for (const s of [
-    "### Objeto analisado",
-    "### Como ler a evidência",
-    "| Nível | Significa | Quem consegue verificar |",
-    "### Superfície exportada",
-    "**Lacuna a preencher pela equipe.**",
-    "Revisão humana é obrigatória antes de submeter",
-  ]) {
-    assert.ok(tm.includes(s), `saída em português sem "${s}"`);
-  }
-  // Os quatro cabeçalhos oficiais são do template e NÃO se traduzem.
-  for (const sec of ["What are we working on?", "What can go wrong?", "What are we going to do about it?", "Did we do a good job?"]) {
-    assert.ok(tm.includes(sec), `cabeçalho oficial "${sec}" traduzido por engano`);
-  }
 });
 
 /* ------------------------------------------------------------------ *
@@ -450,21 +429,6 @@ test("a lacuna de Tampering declara ausência de sinal, não ordem correta", asy
       assert.ok(tm.includes("absence of signal"), `${f}: falta dizer que é ausência de sinal`);
     }
   }
-});
-
-test("--lang pt acompanha as frases reescritas", async (t) => {
-  t.after(() => setLang("en"));
-  const { ctx, tm } = await gerar(amostra[0], "pt");
-  assert.match(tm, /\d+ exportados, \d+ entrypoints? invoc/);
-  assert.ok(tm.includes("A ferramenta não responde esta."), "resposta do DFD não traduzida");
-  assert.ok(tm.includes("negativa sólida para o call graph deste módulo"), "escopo da negativa não traduzido");
-  assert.ok(tm.includes("Onde a identidade é afirmada neste contrato:"), "lacuna de Spoof não traduzida");
-
-  const comTrafego: ArtifactContext = { ...ctx, offline: false, observations: observacao() };
-  const tmB = renderThreatModel(comTrafego);
-  assert.ok(tmB.includes("Nota de nível B/C."), "nota de inicialização não traduzida");
-  assert.ok(tmB.includes("janela de ~186 h"), "ressalva de janela não traduzida");
-  assert.ok(tmB.includes("nenhum monitor do plano irmão"), "frase de nível B sem âncora não traduzida");
 });
 
 /* ------------------------------------------------------------------ *

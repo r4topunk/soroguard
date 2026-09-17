@@ -57,7 +57,7 @@ This module exports `__check_auth`, so it is a **custom account**: authorization
 
 In every column, "yes" means it **reaches** the corresponding host function on some call-graph path, not that it always executes it.
 
-**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` (`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, so a literal at the call site is that argument by construction. The three durabilities are not interchangeable — a `Temporary` entry is deleted permanently when it expires and CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on every invocation. `?` means the entrypoint writes but the storage type reaches the call computed, typically through a generic helper that takes durability as a parameter; `—` means no write is reached. Read literally at 11 of 12 storage call sites in this module. This column is a description of the contract's storage layout, not a finding: each durability is correct for some data and wrong for other data, and which one this contract holds is not derivable from the bytecode.
+**durability** is the `StorageType` of the writes reached: `temp`, `pers`, `inst`. The three are not interchangeable — `temp` is deleted for good on expiry, `inst` shares one 64 KiB entry. `?` means the type reaches the call computed; `—` means no write. Read literally at 11 of 12 storage call sites. It describes the storage layout; it is not a finding.
 
 ### Inferred data stores
 
@@ -68,13 +68,13 @@ Durability is **not** attributable to a key from this list. The `StorageType` is
 
 ### On-chain activity observed (tier B)
 
-Window: ledgers 64346934–64467594 (120661 ledgers, ~185.55h).
+Window: ledgers 64347474–64468134 (120661 ledgers, ~185.47h).
 
-window of 120661 ledgers (~186 h) — limited by RPC retention.
+window of 120661 ledgers (~185 h) — limited by RPC retention.
 
 No event observed in the window: **no event of any topic was observed for this contract in the window — absence of traffic, not a traffic profile.** The count is real and still does not support a monitoring threshold.
 
-Topics declared in the spec and not observed in the window: `simple_policy_enforced`, `spending_limit_policy_enforced`, `weighted_policy_enforced`, `context_rule_added`, `context_rule_updated`, `context_rule_removed`, `signer_added`, `signer_removed`, `policy_added`, `policy_removed`, `set_root`, `set_claimed`, `paused`, `unpaused`. Absence over a ~185.55 h window is not evidence the action never happens — only that it did not happen in that window.
+Topics declared in the spec and not observed in the window: `simple_policy_enforced`, `spending_limit_policy_enforced`, `weighted_policy_enforced`, `context_rule_added`, `context_rule_updated`, `context_rule_removed`, `signer_added`, `signer_removed`, `policy_added`, `policy_removed`, `set_root`, `set_claimed`, `paused`, `unpaused`. Absence over a ~185.47 h window is not evidence the action never happens — only that it did not happen in that window.
 
 ### Data flow diagram
 

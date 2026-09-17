@@ -138,7 +138,7 @@ One asymmetry changes how everything below reads: **"does not reach `require_aut
 
 In every column, "yes" means it **reaches** the corresponding host function on some call-graph path, not that it always executes it.
 
-**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` (`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, so a literal at the call site is that argument by construction. The three durabilities are not interchangeable — a `Temporary` entry is deleted permanently when it expires and CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on every invocation. `?` means the entrypoint writes but the storage type reaches the call computed, typically through a generic helper that takes durability as a parameter; `—` means no write is reached. Read literally at 52 of 56 storage call sites in this module. This column is a description of the contract's storage layout, not a finding: each durability is correct for some data and wrong for other data, and which one this contract holds is not derivable from the bytecode.
+**durability** is the `StorageType` of the writes reached: `temp`, `pers`, `inst`. The three are not interchangeable — `temp` is deleted for good on expiry, `inst` shares one 64 KiB entry. `?` means the type reaches the call computed; `—` means no write. Read literally at 52 of 56 storage call sites. It describes the storage layout; it is not a finding.
 
 ### Inferred data stores
 
@@ -148,21 +148,21 @@ Durability is **not** attributable to a key from this list. The `StorageType` is
 
 ### On-chain activity observed (tier B)
 
-Window: ledgers 64427432–64467591 (40160 ledgers, ~61.76h).
+Window: ledgers 64438336–64468131 (29796 ledgers, ~45.8h).
 
-window of 40160 ledgers (~62 h) — limited by the RPC request budget, not by retention: the collector could not page the whole retained range in the time allowed, and the contracts that emit most events hit this first; baselines are rates over the observed slice, not totals.
+window of 29796 ledgers (~46 h) — limited by the RPC request budget, not by retention: the collector could not page the whole retained range in the time allowed, and the contracts that emit most events hit this first; baselines are rates over the observed slice, not totals.
 
 | Topic | Occurrences | Ledgers | Events/hour |
 |---|---|---|---|
-| `update_reserves` | 14149 | 64427434–64467590 | 229.104 |
-| `pool_state` | 14075 | 64427434–64467590 | 227.906 |
-| `trade` | 14062 | 64427434–64467590 | 227.695 |
-| `claim_fees` | 77 | 64427653–64465889 | 1.247 |
-| `claim_reward` | 66 | 64428580–64465888 | 1.069 |
-| `position_update` | 13 | 64428597–64463357 | 0.21 |
-| `deposit_liquidity` | 9 | 64428668–64463357 | 0.146 |
-| `withdraw_liquidity` | 4 | 64428597–64463340 | 0.065 |
-| `claim_protocol_fee` | 2 | 64451449–64451449 | 0.032 |
+| `update_reserves` | 10991 | 64438337–64468096 | 239.983 |
+| `pool_state` | 10938 | 64438337–64468096 | 238.825 |
+| `trade` | 10929 | 64438337–64468096 | 238.629 |
+| `claim_fees` | 55 | 64438361–64465889 | 1.201 |
+| `claim_reward` | 48 | 64438361–64465888 | 1.048 |
+| `position_update` | 9 | 64444989–64463357 | 0.197 |
+| `deposit_liquidity` | 7 | 64444989–64463357 | 0.153 |
+| `claim_protocol_fee` | 2 | 64451449–64451449 | 0.044 |
+| `withdraw_liquidity` | 2 | 64455285–64463340 | 0.044 |
 
 ### Data flow diagram
 
@@ -683,15 +683,15 @@ These 5 findings are the same shape: family `init`, class `initialization-front-
 
 **Shared remediation.** The same actions apply to every entrypoint listed; they stay numbered per id, from `Elevation.1.R.1` to `Elevation.5.R.1`, in *What are we going to do about it*.
 
-> **Tier B/C note.** Observed traffic (42457 events over ~61.76 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `init_pools_plane`, `initialize`, `initialize_all`, `initialize_boost_config` and `initialize_rewards_config` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
+> **Tier B/C note.** Observed traffic (32981 events over ~45.8 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `init_pools_plane`, `initialize`, `initialize_all`, `initialize_boost_config` and `initialize_rewards_config` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
 
 > **Init probe (tier B).**
 >
-> - `init_pools_plane` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
-> - `initialize` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #201) = `ConcentratedPoolError::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
-> - `initialize_all` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
-> - `initialize_boost_config` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
-> - `initialize_rewards_config` — Probe (unsigned simulateTransaction, ledger 64467591): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `init_pools_plane` — Probe (unsigned simulateTransaction, ledger 64468131): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize` — Probe (unsigned simulateTransaction, ledger 64468131): **guarded** — simulation reverted with Error(Contract, #201) = `ConcentratedPoolError::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_all` — Probe (unsigned simulateTransaction, ledger 64468131): **guarded** — simulation reverted with Error(Contract, #202) = `ConcentratedPoolError::PlaneAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_boost_config` — Probe (unsigned simulateTransaction, ledger 64468131): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize_rewards_config` — Probe (unsigned simulateTransaction, ledger 64468131): **guarded** — simulation reverted with Error(Contract, #203) = `ConcentratedPoolError::RewardsAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
 >
 > The front-running window is closed on this instance; residual risk is limited to a future re-deploy of the same code with the same non-atomic initialization.
 
@@ -759,7 +759,7 @@ Outside the scope of this run — it depends on audits, manual review and incide
   - The analysis is of **deployed bytecode**, and the asymmetry matters: "does not reach `require_auth`" is a sound negative for this module's call graph — it says nothing about authorization enforced inside a contract reached through `call`/`try_call`, nor about `__check_auth`; "reaches `put_contract_data`" is an over-approximation, because the write may sit on a branch the entrypoint never executes. Every positive finding carries its hop count for that reason.
   - This module's call graph is complete (no `call_indirect`), so the negative claims in this document are sound with respect to that graph — and only to it.
   - Spoofing and Information Disclosure do not come out of the bytecode: they depend on identity and on a product decision about which data goes onto a public ledger, and neither is in the binary. Measured on the calibration corpus: zero findings in 100% of the 75 mainnet contracts (`docs/CALIBRACAO.md`). Filling those two letters with generic text to satisfy the template's "≥1 per letter" is what would get the document discarded by the first competent reviewer. What this run hands the manual review for those two letters, in numbers: 38 of 96 invocable entrypoints reaching `require_auth*`, 29 inferred storage keys and 1 declared event topic.
-  - The window was observed (40160 ledgers, ~61.76 h, 42457 events across 9 topics), but **no monitor in the sibling plan could anchor a baseline on it** — no monitor binds an observed topic — the plan's rules filter on topics that did not appear in the window. Tier B here is a record of the window, not a baseline: every threshold in the monitoring plan still has to declare that it has no observed basis.
+  - The window was observed (29796 ledgers, ~45.8 h, 32981 events across 9 topics), but **no monitor in the sibling plan could anchor a baseline on it** — no monitor binds an observed topic — the plan's rules filter on topics that did not appear in the window. Tier B here is a record of the window, not a baseline: every threshold in the monitoring plan still has to declare that it has no observed basis.
   - What this model does **not** cover, by construction: economic design (incentives, settlement, oracle), governance and custody of the privileged keys, security of the frontend and of the infrastructure that builds the transactions, and whether the address authorized in each `require_auth` is the right address. None of those questions can be answered from the binary.
 
 ### Submission verdict

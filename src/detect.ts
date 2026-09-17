@@ -3,7 +3,7 @@ import { STORAGE_WRITE_FNS, STORAGE_READ_FNS, SIG_SCHEME_FNS } from "./hostfns.t
 import { parseSpecEntries, modelFromEntries } from "./spec.ts";
 import { readSdkMeta, advisoriesForWasm, evaluateVersion, ADVISORIES_AS_OF } from "./sdkver.ts";
 import { PRNG_FNS } from "./hostfns.ts";
-import { msgs, plural } from "./i18n.ts";
+import { plural } from "./text.ts";
 import {
   requiresAuth, writesStorage, emitsEvent, canUpgradeSelf, canDeploy, delegatesAuth, callsOut, extendsTtl, minHops,
 } from "./analyze.ts";
@@ -13,319 +13,173 @@ import {
  * `entrypoint` e os marcadores `<contrato>` / `<downgraded:…>` — são identificadores de dado,
  * lidos por outros módulos (monitors, validate, render) e por isso idênticos nos dois idiomas.
  */
-const M = msgs({
-  en: {
-    /* supressões */
-    supReservada: "reserved `__` function, not directly invocable (CAP-0058)",
-    supLeitura: "read-shaped name: the write probably comes from a shared helper, not from this path",
-    supCrank: "permissionless crank by design (protocol maintenance pattern)",
-    supRebaixado:
-      "DOWNGRADED (not suppressed): reaches call/try_call — authorization may live in the callee, severity capped at High",
+const M = {
+  /* supressões */
+  supReservada: "reserved `__` function, not directly invocable (CAP-0058)",
+  supLeitura: "read-shaped name: the write probably comes from a shared helper, not from this path",
+  supCrank: "permissionless crank by design (protocol maintenance pattern)",
+  supRebaixado:
+    "DOWNGRADED (not suppressed): reaches call/try_call — authorization may live in the callee, severity capped at High",
 
-    /* evidência comum */
-    semAlcance: "none",
-    base: (nome: string, reach: string, fanout: number, sound: boolean) =>
-      `export \`${nome}\`: reachable host functions = {${reach}}. Subgraph of ${fanout} functions, call graph ${sound ? "complete" : "INCOMPLETE (call_indirect present)"}.`,
+  /* evidência comum */
+  semAlcance: "none",
+  base: (nome: string, reach: string, fanout: number, sound: boolean) =>
+    `export \`${nome}\`: reachable host functions = {${reach}}. Subgraph of ${fanout} functions, call graph ${sound ? "complete" : "INCOMPLETE (call_indirect present)"}.`,
 
-    /* D1/D2 — mutação de estado sem autorização */
-    tituloInit: (nome: string) => `\`${nome}\` reaches state initialization without requiring authorization`,
-    tituloEscrita: (nome: string) => `\`${nome}\` reaches a state write without requiring authorization`,
-    semAuth: (sound: boolean) =>
-      `No path reaches require_auth or require_auth_for_args${sound ? " — sound negative" : " — NOT a sound negative, because of call_indirect"}.`,
-    caminhoEscrita: (hops: number) =>
-      `A path to a storage write exists: ${hops} ${plural(hops, "hop", "hops")} from the export to put_contract_data/del_contract_data.`,
-    avisoHelperEscrita: (hops: number) =>
-      `⚠ REVIEW: the path to the write is ${hops} hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.`,
-    infInit:
-      "The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.",
-    infInitComConstrutor:
-      "The contract DOES export `__constructor`, so the deploy itself initializes atomically (CAP-0058). An init-shaped entrypoint kept alongside it is either a second-stage initializer or a legacy one kept for compatibility — in both readings the risk is front-running / re-initialization of that stage, not a generic unauthenticated writer.",
-    /**
-     * Fato e inferência saem SEPARADOS. Alcançabilidade é bytecode (A); "é uma guarda de
-     * já-inicializado" é leitura do que aquele `has_contract_data` faz (C). Numa linha só,
-     * sob `[A]`, a opinião viajava de carona no crachá do fato.
-     */
-    evInitGuardFato: (alcanca: boolean) =>
-      alcanca
-        ? "`has_contract_data` IS reachable from this export."
-        : "`has_contract_data` IS NOT reachable from this export.",
-    evInitGuardInferencia: (alcanca: boolean) =>
-      alcanca
-        ? "A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability."
-        : "No already-initialized guard is visible on this path. That the absence means there is none does not follow from the bytecode: the guard could live behind a cross-contract call.",
-    regraSeveridadeInit: (guarda: boolean, hops: number, sev: string) =>
-      `Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = ${guarda ? "yes" : "no"}, ${hops} ${plural(hops, "hop", "hops")} → ${sev}.`,
-    infDelega:
-      "No `require_auth` in this module. If authorization is delegated to a called contract (e.g. `require_auth(from)` inside `token.transfer`), it is invisible in this binary — confirm the callee.",
-    infQualquer: (nome: string, hops: number, evento: boolean, cross: boolean, upgrade: boolean) => {
-      const extra = [
-        ...(evento ? ["emits an event"] : []),
-        ...(cross ? ["calls another contract"] : []),
-        ...(upgrade ? ["can replace its own code"] : []),
-      ];
-      const cauda = extra.length ? ` and on that path it also ${extra.join(", ")}` : "";
-      return `Any address can invoke \`${nome}\`; on some path it reaches a storage write (${hops} ${plural(hops, "hop", "hops")})${cauda}. Whether that path is the one an anonymous caller can drive is not derivable here.`;
-    },
-    notaDelega:
-      "severity capped at High: reaches call/try_call and the authorization may live in the called contract",
-
-    /* D3 — troca do próprio código */
-    tituloUpgrade: (nome: string) => `\`${nome}\` reaches a code swap without requiring authorization`,
-    evUpgrade:
-      "Reaches the self-code-swap family (update_current_contract_wasm / update_current_contract_executable_ref) without reaching require_auth*.",
-    infUpgrade: "Allows replacing the contract logic, which subsumes every other protection.",
-
-    /* D8 — escrita antes da autorização */
-    tituloWba: (nome: string) =>
-      `\`${nome}\`: a storage write appears before \`require_auth\` in the bytecode order of the same body (textual order — branches are not distinguished)`,
-    evWba: (body: number, writeFn: string, writeOff: number, authFn: string, authOff: number) =>
-      `In fn#${body}: \`${writeFn}\` at offset 0x${writeOff.toString(16)} precedes \`${authFn}\` at offset 0x${authOff.toString(16)}. Comparison of bytecode offsets within the same body — no linearization across functions.`,
-    infWba:
-      "That the write EXECUTES before the authorization is an inference, not a fact: the comparison is of offsets within the body, with no control-flow model — the two calls may sit on mutually exclusive branches, or the write on a branch that is never taken. If the execution order really is that one, the impact still depends on there being an external effect between the two (typically a cross-contract call), because a failing authorization reverts the whole transaction in Soroban. Review the indicated body.",
-
-    /* D6 — trilha de auditoria ausente */
-    tituloSilent: (mudos: number, total: number) =>
-      `${mudos} of ${total} state-changing ${plural(mudos, "entrypoint emits", "entrypoints emit")} no event`,
-    evSilent: (lista: string) => `Reach put_contract_data and do not reach contract_event: ${lista}.`,
-    evExcluidosLeitura: (k: number, lista: string) =>
-      `${k} read-shaped ${plural(k, "entrypoint", "entrypoints")} that reach a write through a shared helper were excluded from the count (both numerator and denominator): ${lista}. Emitting events from a quoting getter is not the remediation.`,
-    infSilent:
-      "Without an event there is no off-chain proof that the action happened, and the change is only detectable by state diff — which makes real-time monitoring of those actions unfeasible.",
-    /**
-     * A severidade vem da CLASSE da ação silenciosa, não da fração silent/mutadores.
-     * Medido em docs/PRECISION-TOP25.md: `2 de 2` num bot anônimo saía High enquanto um
-     * `upgrade` sem evento num fundo regulado saía Medium. Fração não é impacto.
-     */
-    regraSeveridadeSilent: (sev: string, decisores: string, initOnly: boolean) =>
-      `Severity rule applied (class of the silent action, not the silent/state-changing fraction): High when any silent entrypoint is upgrade-capable or admin/permission-shaped by name; Low when every silent entrypoint is an init-shaped one-shot; Medium otherwise. Here: ${
-        decisores
-          ? `deciding entrypoints = ${decisores}`
-          : initOnly
-            ? "every silent entrypoint is init-shaped"
-            : "no upgrade-capable or admin/permission-shaped silent entrypoint"
-      } → ${sev}.`,
-    evSilentDecisores: (lista: string) =>
-      `Of those, upgrade-capable or admin/permission-shaped by name (listed first above): ${lista}.`,
-
-    /* D10 — escrita de terceiro por chamador arbitrário */
-    tituloTampering: (nome: string) =>
-      `\`${nome}\` lets an arbitrary caller reach a state write while taking an address as a parameter`,
-    evTamperParams: (nome: string, lista: string) =>
-      `The \`contractspecv0\` spec declares ${plural(lista.split(", ").length, "address parameter", "address parameters")} on \`${nome}\`: ${lista}.`,
-    infTamperTaint:
-      "The write may touch only the caller's own record — that is not derivable here, because it would require taint from the parameter to the storage key; confirm in source. If the key does derive from the address parameter, any caller can write into a third party's record, which is Tampering rather than privilege elevation.",
-
-    /* D11 — verificação de assinatura implementada no contrato */
-    tituloSigVerif:
-      "The contract implements signature verification of its own, outside the host's `require_auth` framework",
-    evSigSimbolos: (lista: string) =>
-      `Spec symbols matching the signature-scheme pattern (domain/type hash, nonce, permit, signature): ${lista}.`,
-    evSigErros: (lista: string) => `Error enum variants of a signature scheme: ${lista}.`,
-    evSigCrypto: (lista: string) => `Entrypoints reach crypto host functions: ${lista}.`,
-    evSigSemCrypto: (n: number) =>
-      `No crypto host function is reachable from any export; the classification rests on ${n} spec symbol matches.`,
-    infSigVerif:
-      "Authorization is implemented inside the contract, outside the host's `require_auth` framework; the Spoofing surface (replay, expiry, key rotation) is not covered by the auth detector — review the verifier.",
-
-    /* D7 — TTL */
-    tituloTtl: "No entrypoint of the contract extends storage TTL",
-    evTtlEscrevem: (n: number, lista: string) =>
-      `${n} ${plural(n, "entrypoint reaches", "entrypoints reach")} put_contract_data: ${lista}.`,
-    evTtlNenhum: "No entrypoint of the contract reaches the extend_*_ttl family.",
-    infTtl:
-      "Persistent/instance entries are archived at the end of their TTL and the state becomes inaccessible. This is only acceptable if all storage is temporary by design — which is not derivable from the bytecode, because durability is a runtime argument.",
-    infTtlDurabilidade:
-      "Declared gap on the impact: it depends on the durability of each entry — a persistent entry archived at the end of its TTL is restorable through the restore footprint of a later transaction, a temporary entry is lost for good, and an instance entry follows the contract instance. Durability is a runtime argument of put_contract_data and is not read from the bytecode here, so the severity is Medium and the gap is declared rather than resolved.",
-
-    /* D-PRNG */
-    avisoHelperPrng: (hops: number) =>
-      `⚠ REVIEW: the path to the PRNG is ${hops} hops long and probably goes through a shared helper. Reachability over-approximates the positive — the call may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.`,
-    infPrng:
-      "The Soroban PRNG is deterministic per ledger. If the result decides something of value, whoever picks the submission ledger influences the draw. Legitimate if the use is cosmetic.",
-    tituloPrngAgregado: (n: number, nomes: string) =>
-      `${n} entrypoints reach the host PRNG (${nomes}) on a path that changes state`,
-    evPrngAgregado: (nomes: string, lista: string) =>
-      `Reach ${nomes} and also a storage write or a cross-contract call: ${lista}.`,
-    evPrngItem: (nome: string, hops: number) => `${nome} (${hops} ${plural(hops, "hop", "hops")})`,
-    evPrngDistancia: (menor: number, maior: number) =>
-      `Distance from the export to the PRNG: minimum ${menor} ${plural(menor, "hop", "hops")}, maximum ${maior}.`,
-    /** Por que sai agregado é decisão de relatório, não fato do bytecode — logo, nível C. */
-    notaPrngUmFato: (n: number) =>
-      `A single PRNG import reached by ${n} exports is read here as one fact about the contract, not ${n} independent facts — hence it is reported aggregated.`,
-    notaPrngAgregado: (n: number) => `aggregated: same PRNG reached by ${n} entrypoints (> 3)`,
-    tituloPrng: (nome: string) => `\`${nome}\` uses the host PRNG on a path that changes state`,
-    evPrng: (nomes: string, hops: number, escreve: boolean) =>
-      `Reaches ${nomes} in ${hops} ${plural(hops, "hop", "hops")} from the export, and also ${escreve ? "a storage write" : "a cross-contract call"}.`,
-    notaPrngRebaixado: (hops: number) => `downgraded to Low: ${hops} hops to the PRNG, likely a shared helper`,
-
-    /* D9 — SDK */
-    tituloSdkLacuna: (raw: string) =>
-      `Declared gap: rssdkver present but not parseable: ${raw} — advisory range not evaluable`,
-    evSdkLacuna: (raw: string) =>
-      `Custom section \`contractmetav0\` declares rssdkver = ${raw}, which does not match \`major.minor.patch\`. No range comparison was run over that value.`,
-    infSdkLacuna: (asOf: string) =>
-      `Not evaluable is not "not affected": the binary may have been compiled with an SDK in an affected range. Determining the real version requires the build or the repository. Advisories curated as of ${asOf}.`,
-    tituloSdkExposicao: (versao: string, id: string, sev: string) =>
-      `Exposure: compiled with soroban-sdk ${versao}, in a range affected by ${id} (${sev} in the advisory; exploitability not confirmed)`,
-    evSdkVersao: (versao: string, commit: string) =>
-      `Custom section \`contractmetav0\` declares rssdkver = ${versao}${commit ? ` (commit ${commit})` : ""}.`,
-    evSdkAdvisory: (id: string, sev: string, titulo: string, patched: string, url: string) =>
-      `${id} (${sev} in the advisory): ${titulo}. Fixed in ${patched}. ${url}`,
-    evSdkGate: (lista: string) => `The module imports pairing-curve host functions: ${lista}.`,
-    infSdkGate:
-      "Heuristic filter: the finding is only emitted when there is a BLS12-381/BN254 import. A contract could, in theory, build and compare `Fr` without importing any of those functions — the absence of the finding does not prove the absence of exposure.",
-    infSdkExplorabilidade: (trigger: string) =>
-      `The exposure is a fact; exploitability has not been confirmed and requires manual review. ${trigger}`,
-    infSdkBaseRate:
-      "Base rate measured outside the bytecode (not derivable from this binary, hence tier C). Source verification on 2026-09-16: of the 34 corpus contracts in an affected range, 20 verified as not affected, 0 confirmed vulnerable, 14 without source — docs/CVE-2026-26267-VERIFICACAO.md. This finding is EXPOSURE, not a confirmed vulnerability.",
-    infSdkAsOf: (asOf: string) =>
-      `Advisory list curated as of ${asOf} and not refreshed at runtime — re-check against RustSec/GHSA on the review date.`,
+  /* D1/D2 — mutação de estado sem autorização */
+  tituloInit: (nome: string) => `\`${nome}\` reaches state initialization without requiring authorization`,
+  tituloEscrita: (nome: string) => `\`${nome}\` reaches a state write without requiring authorization`,
+  semAuth: (sound: boolean) =>
+    `No path reaches require_auth or require_auth_for_args${sound ? " — sound negative" : " — NOT a sound negative, because of call_indirect"}.`,
+  caminhoEscrita: (hops: number) =>
+    `A path to a storage write exists: ${hops} ${plural(hops, "hop", "hops")} from the export to put_contract_data/del_contract_data.`,
+  avisoHelperEscrita: (hops: number) =>
+    `⚠ REVIEW: the path to the write is ${hops} hops long and probably goes through a shared helper. Reachability over-approximates the positive — the write may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.`,
+  infInit:
+    "The contract does not export `__constructor`, so initialization is a transaction separate from the deploy (CAP-0058). Between one and the other, any address can initialize first and take the privileged roles.",
+  infInitComConstrutor:
+    "The contract DOES export `__constructor`, so the deploy itself initializes atomically (CAP-0058). An init-shaped entrypoint kept alongside it is either a second-stage initializer or a legacy one kept for compatibility — in both readings the risk is front-running / re-initialization of that stage, not a generic unauthenticated writer.",
+  /**
+   * Fato e inferência saem SEPARADOS. Alcançabilidade é bytecode (A); "é uma guarda de
+   * já-inicializado" é leitura do que aquele `has_contract_data` faz (C). Numa linha só,
+   * sob `[A]`, a opinião viajava de carona no crachá do fato.
+   */
+  evInitGuardFato: (alcanca: boolean) =>
+    alcanca
+      ? "`has_contract_data` IS reachable from this export."
+      : "`has_contract_data` IS NOT reachable from this export.",
+  evInitGuardInferencia: (alcanca: boolean) =>
+    alcanca
+      ? "A reachable `has_contract_data` is, in the idiomatic pattern, an already-initialized guard. Whether the guard covers THIS path, and whether it aborts, does not follow from reachability."
+      : "No already-initialized guard is visible on this path. That the absence means there is none does not follow from the bytecode: the guard could live behind a cross-contract call.",
+  regraSeveridadeInit: (guarda: boolean, hops: number, sev: string) =>
+    `Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = ${guarda ? "yes" : "no"}, ${hops} ${plural(hops, "hop", "hops")} → ${sev}.`,
+  infDelega:
+    "No `require_auth` in this module. If authorization is delegated to a called contract (e.g. `require_auth(from)` inside `token.transfer`), it is invisible in this binary — confirm the callee.",
+  infQualquer: (nome: string, hops: number, evento: boolean, cross: boolean, upgrade: boolean) => {
+    const extra = [
+      ...(evento ? ["emits an event"] : []),
+      ...(cross ? ["calls another contract"] : []),
+      ...(upgrade ? ["can replace its own code"] : []),
+    ];
+    const cauda = extra.length ? ` and on that path it also ${extra.join(", ")}` : "";
+    return `Any address can invoke \`${nome}\`; on some path it reaches a storage write (${hops} ${plural(hops, "hop", "hops")})${cauda}. Whether that path is the one an anonymous caller can drive is not derivable here.`;
   },
-  pt: {
-    supReservada: "função reservada `__`, não invocável diretamente (CAP-0058)",
-    supLeitura: "nome de leitura: escrita provavelmente vem de helper compartilhado, não deste caminho",
-    supCrank: "crank permissionless por desenho (padrão de manutenção de protocolo)",
-    supRebaixado:
-      "REBAIXADO (não suprimido): alcança call/try_call — autorização pode estar no callee, severidade limitada a High",
+  notaDelega:
+    "severity capped at High: reaches call/try_call and the authorization may live in the called contract",
 
-    semAlcance: "nenhuma",
-    base: (nome: string, reach: string, fanout: number, sound: boolean) =>
-      `export \`${nome}\`: host functions alcançáveis = {${reach}}. Subgrafo de ${fanout} funções, call graph ${sound ? "completo" : "INCOMPLETO (call_indirect presente)"}.`,
+  /* D3 — troca do próprio código */
+  tituloUpgrade: (nome: string) => `\`${nome}\` reaches a code swap without requiring authorization`,
+  evUpgrade:
+    "Reaches the self-code-swap family (update_current_contract_wasm / update_current_contract_executable_ref) without reaching require_auth*.",
+  infUpgrade: "Allows replacing the contract logic, which subsumes every other protection.",
 
-    tituloInit: (nome: string) => `\`${nome}\` alcança inicialização de estado sem exigir autorização`,
-    tituloEscrita: (nome: string) => `\`${nome}\` alcança escrita de estado sem exigir autorização`,
-    semAuth: (sound: boolean) =>
-      `Nenhum caminho alcança require_auth nem require_auth_for_args${sound ? " — negativa sólida" : " — negativa NÃO sólida por call_indirect"}.`,
-    caminhoEscrita: (hops: number) =>
-      `Existe caminho até escrita de storage: ${hops} salto(s) do export até put_contract_data/del_contract_data.`,
-    avisoHelperEscrita: (hops: number) =>
-      `⚠ REVISAR: o caminho até a escrita tem ${hops} saltos e provavelmente passa por helper compartilhado. A alcançabilidade super-aproxima o positivo — a escrita pode estar num ramo que este entrypoint nunca executa. Confirmar antes de tratar como achado.`,
-    infInit:
-      "O contrato não exporta `__constructor`, então a inicialização é uma transação separada do deploy (CAP-0058). Entre uma e outra, qualquer endereço pode inicializar primeiro e tomar os papéis privilegiados.",
-    infInitComConstrutor:
-      "O contrato EXPORTA `__constructor`, então o próprio deploy inicializa atomicamente (CAP-0058). Um entrypoint com nome de init mantido ao lado dele é um inicializador de segunda etapa ou um legado mantido por compatibilidade — nas duas leituras o risco é front-running / re-inicialização dessa etapa, não um escritor genérico sem autenticação.",
-    evInitGuardFato: (alcanca: boolean) =>
-      alcanca
-        ? "`has_contract_data` É alcançável a partir deste export."
-        : "`has_contract_data` NÃO é alcançável a partir deste export.",
-    evInitGuardInferencia: (alcanca: boolean) =>
-      alcanca
-        ? "Um `has_contract_data` alcançável é, no padrão idiomático, uma guarda de \"já inicializado\". Se a guarda cobre ESTE caminho, e se ela aborta, não decorre da alcançabilidade."
-        : "Nenhuma guarda de \"já inicializado\" é visível neste caminho. Que a ausência signifique que não há guarda não decorre do bytecode: ela pode estar atrás de uma chamada cross-contract.",
-    regraSeveridadeInit: (guarda: boolean, hops: number, sev: string) =>
-      `Regra de severidade aplicada: High só quando a guarda de já-inicializado NÃO é alcançável E o caminho até a escrita tem ≤ 2 saltos; Medium quando a guarda É alcançável ou o caminho é mais longo. Aqui: guarda alcançável = ${guarda ? "sim" : "não"}, ${hops} salto(s) → ${sev}.`,
-    infDelega:
-      "Nenhum `require_auth` neste módulo. Se a autorização for delegada a um contrato chamado (p.ex. `require_auth(from)` dentro de `token.transfer`), ela é invisível neste binário — confirmar o callee.",
-    infQualquer: (nome: string, hops: number, evento: boolean, cross: boolean, upgrade: boolean) => {
-      const extra = [
-        ...(evento ? ["emite evento"] : []),
-        ...(cross ? ["chama outro contrato"] : []),
-        ...(upgrade ? ["pode trocar o próprio código"] : []),
-      ];
-      const cauda = extra.length ? ` e nesse caminho também ${extra.join(", ")}` : "";
-      return `Qualquer endereço pode invocar \`${nome}\`; em algum caminho ele alcança escrita de storage (${hops} salto(s))${cauda}. Se esse caminho é o que um chamador anônimo consegue percorrer não é determinável aqui.`;
-    },
-    notaDelega:
-      "severidade limitada a High: alcança call/try_call e a autorização pode estar no contrato chamado",
+  /* D8 — escrita antes da autorização */
+  tituloWba: (nome: string) =>
+    `\`${nome}\`: a storage write appears before \`require_auth\` in the bytecode order of the same body (textual order — branches are not distinguished)`,
+  evWba: (body: number, writeFn: string, writeOff: number, authFn: string, authOff: number) =>
+    `In fn#${body}: \`${writeFn}\` at offset 0x${writeOff.toString(16)} precedes \`${authFn}\` at offset 0x${authOff.toString(16)}. Comparison of bytecode offsets within the same body — no linearization across functions.`,
+  infWba:
+    "That the write EXECUTES before the authorization is an inference, not a fact: the comparison is of offsets within the body, with no control-flow model — the two calls may sit on mutually exclusive branches, or the write on a branch that is never taken. If the execution order really is that one, the impact still depends on there being an external effect between the two (typically a cross-contract call), because a failing authorization reverts the whole transaction in Soroban. Review the indicated body.",
 
-    tituloUpgrade: (nome: string) => `\`${nome}\` alcança troca de código sem exigir autorização`,
-    evUpgrade:
-      "Alcança a família de troca do próprio código (update_current_contract_wasm / update_current_contract_executable_ref) sem alcançar require_auth*.",
-    infUpgrade: "Permite substituir a lógica do contrato, o que subsume qualquer outra proteção.",
+  /* D6 — trilha de auditoria ausente */
+  tituloSilent: (mudos: number, total: number) =>
+    `${mudos} of ${total} state-changing ${plural(mudos, "entrypoint emits", "entrypoints emit")} no event`,
+  evSilent: (lista: string) => `Reach put_contract_data and do not reach contract_event: ${lista}.`,
+  evExcluidosLeitura: (k: number, lista: string) =>
+    `${k} read-shaped ${plural(k, "entrypoint", "entrypoints")} that reach a write through a shared helper were excluded from the count (both numerator and denominator): ${lista}. Emitting events from a quoting getter is not the remediation.`,
+  infSilent:
+    "Without an event there is no off-chain proof that the action happened, and the change is only detectable by state diff — which makes real-time monitoring of those actions unfeasible.",
+  /**
+   * A severidade vem da CLASSE da ação silenciosa, não da fração silent/mutadores.
+   * Medido em docs/PRECISION-TOP25.md: `2 de 2` num bot anônimo saía High enquanto um
+   * `upgrade` sem evento num fundo regulado saía Medium. Fração não é impacto.
+   */
+  regraSeveridadeSilent: (sev: string, decisores: string, initOnly: boolean) =>
+    `Severity rule applied (class of the silent action, not the silent/state-changing fraction): High when any silent entrypoint is upgrade-capable or admin/permission-shaped by name; Low when every silent entrypoint is an init-shaped one-shot; Medium otherwise. Here: ${
+      decisores
+        ? `deciding entrypoints = ${decisores}`
+        : initOnly
+          ? "every silent entrypoint is init-shaped"
+          : "no upgrade-capable or admin/permission-shaped silent entrypoint"
+    } → ${sev}.`,
+  evSilentDecisores: (lista: string) =>
+    `Of those, upgrade-capable or admin/permission-shaped by name (listed first above): ${lista}.`,
 
-    tituloWba: (nome: string) =>
-      `\`${nome}\`: escrita de storage aparece antes de \`require_auth\` na ordem do bytecode do mesmo corpo (ordem textual — ramos não são distinguidos)`,
-    evWba: (body: number, writeFn: string, writeOff: number, authFn: string, authOff: number) =>
-      `Em fn#${body}: \`${writeFn}\` no offset 0x${writeOff.toString(16)} precede \`${authFn}\` no offset 0x${authOff.toString(16)}. Comparação de offsets de bytecode no mesmo corpo — sem linearização entre funções.`,
-    infWba:
-      "Que a escrita EXECUTE antes da autorização é inferência, não fato: a comparação é de offsets no corpo, sem modelo de fluxo de controle — as duas chamadas podem estar em ramos mutuamente exclusivos, ou a escrita num ramo nunca tomado. Se a ordem de execução for mesmo essa, o impacto ainda depende de haver efeito externo entre as duas (tipicamente uma chamada cross-contract), porque uma autorização que falha reverte a transação inteira no Soroban. Revisar o corpo indicado.",
+  /* D10 — escrita de terceiro por chamador arbitrário */
+  tituloTampering: (nome: string) =>
+    `\`${nome}\` lets an arbitrary caller reach a state write while taking an address as a parameter`,
+  evTamperParams: (nome: string, lista: string) =>
+    `The \`contractspecv0\` spec declares ${plural(lista.split(", ").length, "address parameter", "address parameters")} on \`${nome}\`: ${lista}.`,
+  infTamperTaint:
+    "The write may touch only the caller's own record — that is not derivable here, because it would require taint from the parameter to the storage key; confirm in source. If the key does derive from the address parameter, any caller can write into a third party's record, which is Tampering rather than privilege elevation.",
 
-    tituloSilent: (mudos: number, total: number) =>
-      `${mudos} de ${total} entrypoints que mudam estado não emitem evento`,
-    evSilent: (lista: string) => `Alcançam put_contract_data e não alcançam contract_event: ${lista}.`,
-    evExcluidosLeitura: (k: number, lista: string) =>
-      `${k} entrypoint(s) com nome de leitura que alcançam escrita por helper compartilhado foram excluídos da conta (numerador e denominador): ${lista}. Emitir evento em getter de cotação não é a remediação.`,
-    infSilent:
-      "Sem evento não há prova off-chain de que a ação ocorreu, e a mudança só é detectável por diff de estado — o que inviabiliza monitoramento em tempo real dessas ações.",
-    regraSeveridadeSilent: (sev: string, decisores: string, initOnly: boolean) =>
-      `Regra de severidade aplicada (classe da ação silenciosa, não a fração mudos/mutadores): High quando algum entrypoint mudo pode trocar o próprio código ou tem nome de admin/permissão; Low quando todos os entrypoints mudos são one-shots com nome de init; Medium no resto. Aqui: ${
-        decisores
-          ? `entrypoints decisores = ${decisores}`
-          : initOnly
-            ? "todos os entrypoints mudos têm nome de init"
-            : "nenhum entrypoint mudo troca código nem tem nome de admin/permissão"
-      } → ${sev}.`,
-    evSilentDecisores: (lista: string) =>
-      `Destes, os que trocam o próprio código ou têm nome de admin/permissão (listados primeiro acima): ${lista}.`,
+  /* D11 — verificação de assinatura implementada no contrato */
+  tituloSigVerif:
+    "The contract implements signature verification of its own, outside the host's `require_auth` framework",
+  evSigSimbolos: (lista: string) =>
+    `Spec symbols matching the signature-scheme pattern (domain/type hash, nonce, permit, signature): ${lista}.`,
+  evSigErros: (lista: string) => `Error enum variants of a signature scheme: ${lista}.`,
+  evSigCrypto: (lista: string) => `Entrypoints reach crypto host functions: ${lista}.`,
+  evSigSemCrypto: (n: number) =>
+    `No crypto host function is reachable from any export; the classification rests on ${n} spec symbol matches.`,
+  infSigVerif:
+    "Authorization is implemented inside the contract, outside the host's `require_auth` framework; the Spoofing surface (replay, expiry, key rotation) is not covered by the auth detector — review the verifier.",
 
-    tituloTampering: (nome: string) =>
-      `\`${nome}\` permite que um chamador arbitrário alcance escrita de estado recebendo um endereço como parâmetro`,
-    evTamperParams: (nome: string, lista: string) =>
-      `O spec \`contractspecv0\` declara ${plural(lista.split(", ").length, "parâmetro de endereço", "parâmetros de endereço")} em \`${nome}\`: ${lista}.`,
-    infTamperTaint:
-      "A escrita pode tocar apenas o registro do próprio chamador — isso não é determinável aqui, porque exigiria taint do parâmetro até a chave de storage; confirmar no fonte. Se a chave derivar do parâmetro de endereço, qualquer chamador escreve no registro de um terceiro, o que é Tampering e não elevação de privilégio.",
+  /* D7 — TTL */
+  tituloTtl: "No entrypoint of the contract extends storage TTL",
+  evTtlEscrevem: (n: number, lista: string) =>
+    `${n} ${plural(n, "entrypoint reaches", "entrypoints reach")} put_contract_data: ${lista}.`,
+  evTtlNenhum: "No entrypoint of the contract reaches the extend_*_ttl family.",
+  infTtl:
+    "Persistent/instance entries are archived at the end of their TTL and the state becomes inaccessible. This is only acceptable if all storage is temporary by design — which is not derivable from the bytecode, because durability is a runtime argument.",
+  infTtlDurabilidade:
+    "Declared gap on the impact: it depends on the durability of each entry — a persistent entry archived at the end of its TTL is restorable through the restore footprint of a later transaction, a temporary entry is lost for good, and an instance entry follows the contract instance. Durability is a runtime argument of put_contract_data and is not read from the bytecode here, so the severity is Medium and the gap is declared rather than resolved.",
 
-    tituloSigVerif:
-      "O contrato implementa verificação de assinatura própria, fora do framework `require_auth` do host",
-    evSigSimbolos: (lista: string) =>
-      `Símbolos do spec que casam o padrão de esquema de assinatura (domain/type hash, nonce, permit, signature): ${lista}.`,
-    evSigErros: (lista: string) => `Variantes do enum de erro típicas de esquema de assinatura: ${lista}.`,
-    evSigCrypto: (lista: string) => `Entrypoints alcançam host functions de cripto: ${lista}.`,
-    evSigSemCrypto: (n: number) =>
-      `Nenhuma host function de cripto é alcançável de algum export; a classificação se apoia em ${n} símbolos do spec.`,
-    infSigVerif:
-      "A autorização é implementada dentro do contrato, fora do framework `require_auth` do host; a superfície de Spoofing (replay, expiração, rotação de chave) não é coberta pelo detector de auth — revisar o verificador.",
+  /* D-PRNG */
+  avisoHelperPrng: (hops: number) =>
+    `⚠ REVIEW: the path to the PRNG is ${hops} hops long and probably goes through a shared helper. Reachability over-approximates the positive — the call may sit on a branch this entrypoint never executes. Confirm before treating this as a finding.`,
+  infPrng:
+    "The Soroban PRNG is deterministic per ledger. If the result decides something of value, whoever picks the submission ledger influences the draw. Legitimate if the use is cosmetic.",
+  tituloPrngAgregado: (n: number, nomes: string) =>
+    `${n} entrypoints reach the host PRNG (${nomes}) on a path that changes state`,
+  evPrngAgregado: (nomes: string, lista: string) =>
+    `Reach ${nomes} and also a storage write or a cross-contract call: ${lista}.`,
+  evPrngItem: (nome: string, hops: number) => `${nome} (${hops} ${plural(hops, "hop", "hops")})`,
+  evPrngDistancia: (menor: number, maior: number) =>
+    `Distance from the export to the PRNG: minimum ${menor} ${plural(menor, "hop", "hops")}, maximum ${maior}.`,
+  /** Por que sai agregado é decisão de relatório, não fato do bytecode — logo, nível C. */
+  notaPrngUmFato: (n: number) =>
+    `A single PRNG import reached by ${n} exports is read here as one fact about the contract, not ${n} independent facts — hence it is reported aggregated.`,
+  notaPrngAgregado: (n: number) => `aggregated: same PRNG reached by ${n} entrypoints (> 3)`,
+  tituloPrng: (nome: string) => `\`${nome}\` uses the host PRNG on a path that changes state`,
+  evPrng: (nomes: string, hops: number, escreve: boolean) =>
+    `Reaches ${nomes} in ${hops} ${plural(hops, "hop", "hops")} from the export, and also ${escreve ? "a storage write" : "a cross-contract call"}.`,
+  notaPrngRebaixado: (hops: number) => `downgraded to Low: ${hops} hops to the PRNG, likely a shared helper`,
 
-    tituloTtl: "Nenhum entrypoint do contrato estende TTL de storage",
-    evTtlEscrevem: (n: number, lista: string) => `${n} entrypoints alcançam put_contract_data: ${lista}.`,
-    evTtlNenhum: "Nenhum entrypoint do contrato alcança a família extend_*_ttl.",
-    infTtl:
-      "Entradas persistentes/instance são arquivadas ao fim do TTL e o estado fica inacessível. Só é aceitável se todo o storage for temporary por design — o que não é determinável do bytecode, porque a durabilidade é argumento em runtime.",
-    infTtlDurabilidade:
-      "Lacuna declarada sobre o impacto: ele depende da durabilidade de cada entrada — uma entrada persistent arquivada ao fim do TTL é restaurável pelo restore footprint de uma transação posterior, uma entrada temporary é perdida de vez, e uma entrada instance acompanha a instância do contrato. A durabilidade é argumento em runtime de put_contract_data e não é lida do bytecode aqui, por isso a severidade é Medium e a lacuna fica declarada em vez de resolvida.",
-
-    avisoHelperPrng: (hops: number) =>
-      `⚠ REVISAR: o caminho até o PRNG tem ${hops} saltos e provavelmente passa por helper compartilhado. A alcançabilidade super-aproxima o positivo — a chamada pode estar num ramo que este entrypoint nunca executa. Confirmar antes de tratar como achado.`,
-    infPrng:
-      "O PRNG do Soroban é determinístico por ledger. Se o resultado decide algo com valor, quem escolhe o ledger de submissão influencia o sorteio. Legítimo se o uso for cosmético.",
-    tituloPrngAgregado: (n: number, nomes: string) =>
-      `${n} entrypoints alcançam o PRNG do host (${nomes}) num caminho que muda estado`,
-    evPrngAgregado: (nomes: string, lista: string) =>
-      `Alcançam ${nomes} e também escrita de storage ou chamada cross-contract: ${lista}.`,
-    evPrngItem: (nome: string, hops: number) => `${nome} (${hops} salto(s))`,
-    evPrngDistancia: (menor: number, maior: number) =>
-      `Distância do export até o PRNG: mínimo ${menor} salto(s), máximo ${maior}.`,
-    notaPrngUmFato: (n: number) =>
-      `Um único import de PRNG alcançado por ${n} exports é lido aqui como um fato do contrato, não ${n} fatos independentes — por isso sai agregado.`,
-    notaPrngAgregado: (n: number) => `agregado: mesmo PRNG alcançado por ${n} entrypoints (> 3)`,
-    tituloPrng: (nome: string) => `\`${nome}\` usa o PRNG do host num caminho que muda estado`,
-    evPrng: (nomes: string, hops: number, escreve: boolean) =>
-      `Alcança ${nomes} em ${hops} salto(s) do export, e também ${escreve ? "escrita de storage" : "chamada cross-contract"}.`,
-    notaPrngRebaixado: (hops: number) => `rebaixado a Low: ${hops} saltos até o PRNG, provável helper compartilhado`,
-
-    tituloSdkLacuna: (raw: string) =>
-      `Lacuna declarada: rssdkver presente mas não parseável: ${raw} — faixa de advisory não avaliável`,
-    evSdkLacuna: (raw: string) =>
-      `Custom section \`contractmetav0\` declara rssdkver = ${raw}, que não casa com \`major.minor.patch\`. Nenhuma comparação de faixa foi executada sobre esse valor.`,
-    infSdkLacuna: (asOf: string) =>
-      `Não avaliável não é "não afetado": o binário pode ter sido compilado com um SDK em faixa afetada. Determinar a versão real exige o build ou o repositório. Advisories curados em ${asOf}.`,
-    tituloSdkExposicao: (versao: string, id: string, sev: string) =>
-      `Exposição: compilado com soroban-sdk ${versao}, em faixa afetada por ${id} (${sev} no advisory; explorabilidade não confirmada)`,
-    evSdkVersao: (versao: string, commit: string) =>
-      `Custom section \`contractmetav0\` declara rssdkver = ${versao}${commit ? ` (commit ${commit})` : ""}.`,
-    evSdkAdvisory: (id: string, sev: string, titulo: string, patched: string, url: string) =>
-      `${id} (${sev} no advisory): ${titulo}. Corrigido em ${patched}. ${url}`,
-    evSdkGate: (lista: string) => `O módulo importa host functions de curva de pareamento: ${lista}.`,
-    infSdkGate:
-      "Filtro heurístico: o achado só é emitido quando há import de BLS12-381/BN254. Um contrato poderia, em teoria, construir e comparar `Fr` sem importar nenhuma dessas funções — a ausência do achado não prova ausência de exposição.",
-    infSdkExplorabilidade: (trigger: string) =>
-      `A exposição é fato; a explorabilidade não foi confirmada e exige revisão manual. ${trigger}`,
-    infSdkBaseRate:
-      "Base rate medida fora do bytecode (não derivável deste binário, por isso nível C). Verificação por fonte em 2026-09-16: dos 34 contratos do corpus em faixa afetada, 20 verificados como não afetados, 0 confirmados vulneráveis, 14 sem fonte — docs/CVE-2026-26267-VERIFICACAO.md. Este achado é EXPOSIÇÃO, não vulnerabilidade confirmada.",
-    infSdkAsOf: (asOf: string) =>
-      `Lista de advisories curada em ${asOf} e não é atualizada em runtime — reconferir contra o RustSec/GHSA na data da revisão.`,
-  },
-});
+  /* D9 — SDK */
+  tituloSdkLacuna: (raw: string) =>
+    `Declared gap: rssdkver present but not parseable: ${raw} — advisory range not evaluable`,
+  evSdkLacuna: (raw: string) =>
+    `Custom section \`contractmetav0\` declares rssdkver = ${raw}, which does not match \`major.minor.patch\`. No range comparison was run over that value.`,
+  infSdkLacuna: (asOf: string) =>
+    `Not evaluable is not "not affected": the binary may have been compiled with an SDK in an affected range. Determining the real version requires the build or the repository. Advisories curated as of ${asOf}.`,
+  tituloSdkExposicao: (versao: string, id: string, sev: string) =>
+    `Exposure: compiled with soroban-sdk ${versao}, in a range affected by ${id} (${sev} in the advisory; exploitability not confirmed)`,
+  evSdkVersao: (versao: string, commit: string) =>
+    `Custom section \`contractmetav0\` declares rssdkver = ${versao}${commit ? ` (commit ${commit})` : ""}.`,
+  evSdkAdvisory: (id: string, sev: string, titulo: string, patched: string, url: string) =>
+    `${id} (${sev} in the advisory): ${titulo}. Fixed in ${patched}. ${url}`,
+  evSdkGate: (lista: string) => `The module imports pairing-curve host functions: ${lista}.`,
+  infSdkGate:
+    "Heuristic filter: the finding is only emitted when there is a BLS12-381/BN254 import. A contract could, in theory, build and compare `Fr` without importing any of those functions — the absence of the finding does not prove the absence of exposure.",
+  infSdkExplorabilidade: (trigger: string) =>
+    `The exposure is a fact; exploitability has not been confirmed and requires manual review. ${trigger}`,
+  infSdkBaseRate:
+    "Base rate measured outside the bytecode (not derivable from this binary, hence tier C). Source verification on 2026-09-16: of the 34 corpus contracts in an affected range, 20 verified as not affected, 0 confirmed vulnerable, 14 without source — docs/CVE-2026-26267-VERIFICACAO.md. This finding is EXPOSURE, not a confirmed vulnerability.",
+  infSdkAsOf: (asOf: string) =>
+    `Advisory list curated as of ${asOf} and not refreshed at runtime — re-check against RustSec/GHSA on the review date.`,
+};
 
 /** Letras do STRIDE, como o template oficial da Stellar as nomeia nos IDs. */
 export type Stride = "Spoof" | "Tamper" | "Repudiate" | "Info" | "DoS" | "Elevation";

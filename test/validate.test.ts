@@ -4,9 +4,10 @@
  * eles protegem não é o formato do documento — é a regra de evidência: nenhum `ok` pode sair
  * de casamento de palavra, e nenhuma inferência pode vestir o crachá de fato.
  *
- * As asserções de texto usam o idioma PADRÃO (inglês). O último teste do arquivo cobre o
- * caminho `--lang pt`, restaurando o idioma no `finally` — sem isso o vazamento de `setLang`
- * quebraria os testes seguintes do mesmo processo.
+ * Desde que o validador passou a decidir pelo DADO, a mutação adversarial mudou de lugar: não
+ * adianta mais editar a prosa do documento (o validador não a lê), e por isso os testes mutam
+ * o que o renderizador leria — `ctx.findings`, os monitores, as observações. O markdown só é
+ * mutilado onde a conferência que sobrou é estrutural: id que sumiu, título que sumiu.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +16,6 @@ import { renderThreatModel } from "../src/render/threatmodel.ts";
 import { renderMonitoringPlan } from "../src/render/monitoring.ts";
 import { validateThreatModel, validateMonitoringPlan } from "../src/validate.ts";
 import { deriveMonitors } from "../src/monitors.ts";
-import { setLang } from "../src/i18n.ts";
 import type { ArtifactContext, Observations } from "../src/artifact.ts";
 
 const CORPUS = new URL("../corpus/", import.meta.url).pathname;
@@ -39,41 +39,86 @@ const item = (r: { items: { question: string; status: string; detail: string }[]
   return i;
 };
 
-test("marca de nível tem que estar em cada afirmação, não em algum lugar do documento", async () => {
+/* ------------------------------------------------------------------ *
+ * Evidência: nível vem do DADO, não da marca no texto
+ * ------------------------------------------------------------------ */
+
+test("ameaça sustentada só por inferência (C) é blocker, e o documento não muda isso", async () => {
   const ctx = await ctxAlvo();
   const tm = renderThreatModel(ctx);
   assert.equal(item(validateThreatModel(ctx, tm), "evidence tier").status, "ok");
 
-  // apaga a marca por afirmação e deixa só o título "(tier A)" em pé
-  const semMarca = tm.replace(/\*\*\[([ABC])\]\*\*\s*\*\([^)]*\)\*\s*—\s*/g, "");
-  const r = validateThreatModel(ctx, semMarca);
+  // A afirmação inflada não é mais uma marca reescrita no markdown: é a evidência que não
+  // sustenta o fato. Um achado cuja evidência é toda C é exatamente "C apresentado como A".
+  const soC = {
+    ...ctx,
+    findings: ctx.findings.map((f) => ({ ...f, evidence: f.evidence.map((e) => ({ ...e, tier: "C" as const })) })),
+  };
+  const r = validateThreatModel(soC as typeof ctx, tm);
   assert.equal(item(r, "evidence tier").status, "gap");
-  assert.ok(r.blockers.some((b) => /no evidence tier \(A\/B\/C\)/.test(b)), "documento sem marca por afirmação passou");
+  assert.ok(r.blockers.some((b) => /supported only by inference \(tier C\)/.test(b)), "achado só-C passou como fato");
+  assert.ok(r.blockers.some((b) => /never present C as A/.test(b)), "o blocker não cita a regra que ele protege");
   assert.equal(r.submittable, false);
+  assert.equal(r.verdict, "not-submittable");
 });
 
-test("inferência apresentada como fato de bytecode é blocker", async () => {
+test("ameaça sem evidência nenhuma é blocker", async () => {
   const ctx = await ctxAlvo();
   const tm = renderThreatModel(ctx);
-  const i = tm.indexOf("**[C]**");
-  assert.ok(i > 0, "o documento de referência não tem afirmação de nível C");
-  const inflado = tm.slice(0, i) + "**[A]**" + tm.slice(i + "**[C]**".length);
-  const r = validateThreatModel(ctx, inflado);
-  assert.ok(r.blockers.some((b) => /Inflated evidence tier/.test(b)), "C apresentado como A passou despercebido");
-  assert.equal(r.submittable, false);
+  const sem = { ...ctx, findings: ctx.findings.map((f, i) => (i === 0 ? { ...f, evidence: [] } : f)) };
+  const r = validateThreatModel(sem as typeof ctx, tm);
+  assert.ok(r.blockers.some((b) => b.includes(`Threat ${ctx.findings[0].id} has no evidence at all`)));
+  assert.equal(item(r, "evidence tier").status, "gap");
 });
 
-test("remediação genérica não vira concreta por estar entre crases", async () => {
+/* ------------------------------------------------------------------ *
+ * Remediação: o template é escolhido pela CLASSE do achado
+ * ------------------------------------------------------------------ */
+
+test("classe sem remediação escrita sai declarada como lacuna, não como remediação derivada", async () => {
   const ctx = await ctxAlvo();
   const tm = renderThreatModel(ctx);
-  const generica = tm.replace(
-    /\*\*(Elevation\.\d+\.R\.\d+)\*\* \[C\] — [^|<]+/g,
-    (_m, id: string) => `**${id}** [C] — Apply proper \`access controls\` and follow the ecosystem \`best practices\`. `,
-  );
-  const r = validateThreatModel(ctx, generica);
-  assert.ok(r.blockers.some((b) => /The remediation for/.test(b)), "remediação genérica com crase passou como concreta");
-  assert.equal(r.submittable, false);
+  const r = validateThreatModel(ctx, tm);
+  const d = item(r, "remediations address").detail;
+
+  // `third-party-state-tampering` cai no `default` de `remediacoes()`: o renderizador escreve
+  // a lacuna declarada. É saída honesta (PROBLEMA.md: campo vazio > enchimento) e por isso não
+  // é blocker — mas o checklist precisa dizer que aquela ameaça espera remediação humana.
+  const semTemplate = ctx.findings.filter((f) => f.class === "third-party-state-tampering");
+  assert.ok(semTemplate.length, "o corpus mudou: o contrato de referência não tem classe sem remediação escrita");
+  for (const f of semTemplate) assert.ok(d.includes(f.id!), `${f.id} não foi declarado como lacuna de remediação: ${d}`);
+  assert.match(d, /no remediation is written for their class/);
+  assert.ok(!r.blockers.some((b) => /remediation/i.test(b)), `lacuna declarada virou blocker: ${r.blockers.join(" | ")}`);
 });
+
+test("remediação que não chegou ao documento é blocker (conferência estrutural do id)", async () => {
+  const ctx = await ctxAlvo();
+  const alvo = ctx.findings[0].id!;
+  // apaga só os ids `X.n.R.m` daquela ameaça: a ameaça continua no documento, a remediação não
+  const semRem = renderThreatModel(ctx).replace(new RegExp(`${alvo.replace(".", "\\.")}\\.R\\.\\d+`, "g"), "—");
+  const r = validateThreatModel(ctx, semRem);
+  assert.ok(r.blockers.some((b) => b === `Threat ${alvo} has no remediation in the document.`), r.blockers.join(" | "));
+  assert.equal(item(r, "remediations address").status, "gap");
+});
+
+test("ameaça que sumiu do documento é blocker", async () => {
+  const ctx = await ctxAlvo();
+  const alvo = ctx.findings[0].id!;
+  const sem = renderThreatModel(ctx).replace(new RegExp(`(?<![\\w.])${alvo.replace(".", "\\.")}(?![\\w.])`, "g"), "X.0");
+  const r = validateThreatModel(ctx, sem);
+  assert.ok(r.blockers.some((b) => b.includes(`${alvo} exists in the analysis but does not appear`)), r.blockers.join(" | "));
+});
+
+test("seção oficial ausente é blocker", async () => {
+  const ctx = await ctxAlvo();
+  const sem = renderThreatModel(ctx).replace("## What can go wrong?", "## Stuff");
+  const r = validateThreatModel(ctx, sem);
+  assert.ok(r.blockers.some((b) => b.includes('Section "What can go wrong?" missing')), r.blockers.join(" | "));
+});
+
+/* ------------------------------------------------------------------ *
+ * As seis letras
+ * ------------------------------------------------------------------ */
 
 test("letra do STRIDE sem issue bloqueia a submissão, mesmo com a lacuna bem declarada", async () => {
   const ctx = await ctxAlvo();
@@ -85,11 +130,9 @@ test("letra do STRIDE sem issue bloqueia a submissão, mesmo com a lacuna bem de
   const lacunas = LETRAS.filter((l) => !comAchado.has(l));
   assert.ok(lacunas.length >= 2, `o contrato de referência não tem letra em lacuna: ${lacunas.join(", ")}`);
 
-  // O template oficial pede ≥1 issue por letra. Lacuna honesta continua sendo o texto certo do
-  // documento — o que não pode é o veredito chamar isso de submetível.
   for (const l of lacunas) {
-    // Letra vazia continua barrando a submissão — mas como PREENCHIMENTO da equipe: a planilha
-    // da própria lacuna diz qual é a superfície, e não há análise que a feche.
+    // Letra vazia barra a submissão como PREENCHIMENTO da equipe: a planilha da própria
+    // lacuna diz qual é a superfície, e não há análise que a feche.
     assert.ok(
       (r.needsInput ?? []).some((b) => b.includes(`STRIDE letter ${l} has no issue`)),
       `letra ${l} está em lacuna e não entrou em needsInput`,
@@ -106,22 +149,18 @@ test("letra do STRIDE sem issue bloqueia a submissão, mesmo com a lacuna bem de
   assert.equal(r.submittable, false, "documento com letra sem issue saiu como submetível");
   assert.notEqual(r.verdict, "submittable");
 
-  // e o checklist conta quantas letras estão de fato preenchidas
   const it = item(r, "STRIDE letter");
   assert.equal(it.status, "gap");
   assert.ok(
     it.detail.includes(`${LETRAS.length - lacunas.length} of 6 letters filled.`),
     `o detalhe não conta as letras preenchidas: ${it.detail}`,
   );
-
-  // a seção de lacunas NÃO some do documento: honestidade no texto, blocker no veredito
   assert.ok(tm.includes("Declared gaps"), "a seção de lacunas declaradas sumiu do documento");
 });
 
 test("com as seis letras cobertas por achado, nenhum blocker de letra sobra", async () => {
   const ctx = await ctxAlvo();
   const tm = renderThreatModel(ctx);
-  // contexto sintético: um achado por letra, todos presentes no texto que o validador lê
   const modelo = ctx.findings[0];
   const findings = (["Spoof", "Tamper", "Repudiate", "Info", "DoS", "Elevation"] as const).map((stride, i) => ({
     ...modelo,
@@ -129,11 +168,26 @@ test("com as seis letras cobertas por achado, nenhum blocker de letra sobra", as
     stride,
   }));
   const comTodas = { ...ctx, findings, gaps: [] };
-  const texto = `${tm}\n${findings.map((f) => `**${f.id}** — ${f.title} (${f.stride})`).join("\n")}\n`;
+  const texto = `${tm}\n${findings.map((f) => `**${f.id}** — ${f.title} (${f.stride}) ${f.id}.R.1`).join("\n")}\n`;
   const r = validateThreatModel(comTodas as typeof ctx, texto);
   assert.ok(!r.blockers.some((b) => /has no issue/.test(b)), "blocker de letra vazia com as seis preenchidas");
   assert.ok(item(r, "STRIDE letter").detail.includes("6 of 6 letters filled."), "a contagem não chegou a 6 de 6");
 });
+
+test("achado que não chegou ao documento não conta como letra preenchida", async () => {
+  const ctx = await ctxAlvo();
+  const tm = renderThreatModel(ctx);
+  const letra = ctx.findings[0].stride;
+  const daLetra = ctx.findings.filter((f) => f.stride === letra).map((f) => f.id!);
+  let sem = tm;
+  for (const id of daLetra) sem = sem.replace(new RegExp(`(?<![\\w.])${id.replace(".", "\\.")}(?![\\w.])`, "g"), "X.0");
+  const r = validateThreatModel(ctx, sem);
+  assert.ok(r.blockers.some((b) => b.startsWith(`Letter ${letra}:`)), r.blockers.join(" | "));
+});
+
+/* ------------------------------------------------------------------ *
+ * Baseline: número conferido contra a janela observada
+ * ------------------------------------------------------------------ */
 
 test("baseline nível B é conferido contra a observação, não só contra o tier", async () => {
   const ctx = await ctxAlvo();
@@ -155,11 +209,10 @@ test("baseline nível B é conferido contra a observação, não só contra o ti
   assert.ok(r.blockers.some((b) => /does not match the observation/.test(b)), "baseline inventado passou como observado");
   assert.equal(item(r, "baseline grounded").status, "gap");
   // Nenhum monitor deste documento é `Active` (a §5 afirma isso), então a pergunta sobre
-  // precisão de alerta não tem o que medir — o que ela não pode, em hipótese alguma, é sair ✔.
+  // precisão de alerta não tem o que medir — o que ela não pode é sair ✔.
   assert.equal(item(r, "historically accurate").status, "n/a");
   assert.match(item(r, "historically accurate").detail, /No monitor is Active yet/);
 
-  // tópico que a janela não contém não é baseline de nível B
   const fantasma = mentiroso.map((m) => ({ ...m, baseline: "12 emissions of [topic_that_does_not_exist] in the window of 17280 ledgers ⇒ 0.5/h." }));
   const r2 = validateMonitoringPlan(comObs, md, fantasma);
   assert.ok(r2.blockers.some((b) => /observed window does not contain/.test(b)), "baseline sobre tópico nunca observado passou");
@@ -185,16 +238,31 @@ test("baseline derivado da observação real não vira falso positivo", async ()
   );
 });
 
-test("dizer a palavra off-chain não é identificar ameaça off-chain", async () => {
+test("baseline nível B sem nenhuma observação no contexto é blocker", async () => {
   const ctx = await ctxAlvo();
-  const mons = ctx.monitors ?? [];
-  const solto = `# Plan\n\n${ctx.contractId}\n\nInfrastructure matters.\n`;
-  assert.equal(item(validateMonitoringPlan(ctx, solto, mons), "off-chain").status, "gap");
-  // o documento real prende a fronteira off-chain às letras sem achado derivável
-  assert.equal(item(validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), mons), "off-chain").status, "ok");
+  const mons = (ctx.monitors ?? []).slice(0, 1).map((m) => ({ ...m, baselineTier: "B" as const, baseline: "3 emissions per day." }));
+  const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), mons);
+  assert.ok(r.blockers.some((b) => /declares a tier B baseline with no on-chain observation/.test(b)), r.blockers.join(" | "));
 });
 
-test("justificativa escrita no documento não é acusada de ausente", async () => {
+/* ------------------------------------------------------------------ *
+ * Off-chain: a âncora é o que a análise deixou de fora
+ * ------------------------------------------------------------------ */
+
+test("ameaça descoberta e sem lacuna declarada não passa como fronteira off-chain declarada", async () => {
+  const ctx = await ctxAlvo();
+  // Sem letra em lacuna, e com as ameaças restantes todas FORA da tabela de controle fora da
+  // chain (elas têm observável derivável), tirar os monitores deixa-as descobertas e sem nada
+  // a que prender a fronteira off-chain.
+  const comObservavel = new Set((deriveMonitors(ctx) ?? []).map((m) => m.threatId));
+  const semAncora = { ...ctx, gaps: [], findings: ctx.findings.filter((f) => comObservavel.has(f.id!)) };
+  assert.ok(semAncora.findings.length, "contrato de referência não tem ameaça com observável derivável");
+  assert.equal(item(validateMonitoringPlan(semAncora as typeof ctx, renderMonitoringPlan(ctx), []), "off-chain").status, "gap");
+  // o documento real prende a fronteira às letras sem achado derivável
+  assert.equal(item(validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), ctx.monitors ?? []), "off-chain").status, "ok");
+});
+
+test("justificativa derivada do dado não é acusada de ausente", async () => {
   // Repudiate é a classe que o renderizador manda para a seção de controle fora da chain.
   const ctx = await buildContext({ target: CORPUS + "CBBMQBNHB2FYVZYV7VNHOJHUMTFJLR4PUMRVQYNW6RHIKZO2NQMIBUCV.wasm", network: "mainnet", generatedAt: DATA, offline: true }).catch(() => undefined);
   if (!ctx) return;
@@ -203,7 +271,7 @@ test("justificativa escrita no documento não é acusada de ausente", async () =
   const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), ctx.monitors ?? []);
   assert.ok(
     !r.blockers.some((b) => /no non-monitorability justification/.test(b)),
-    "o validador afirmou que falta justificativa num documento que a escreve com evidência de nível A",
+    "o validador afirmou que falta justificativa sobre ameaça que a §5 cobre com controle nomeado",
   );
 });
 
@@ -231,7 +299,6 @@ test("janela com zero eventos vira lacuna e bloqueia a submissão do plano", asy
     "janela sem tráfego nenhum não virou blocker",
   );
   assert.equal(r.submittable, false);
-  // e a contagem "0 emissões" que chega ao documento sai qualificada, não como perfil medido
   assert.match(md, /absence of traffic, not a traffic profile/);
 });
 
@@ -267,37 +334,8 @@ test("a §6 renderizada e o veredito do CLI são o mesmo relatório", async () =
 });
 
 /* ------------------------------------------------------------------ *
- * `--lang pt`
- * ------------------------------------------------------------------ */
-
-test("--lang pt produz checklist e blockers em português", async () => {
-  try {
-    // `buildContext` chama `setLang(opts.lang ?? "en")`: o idioma tem de entrar por ele,
-    // senão a própria construção do contexto devolve a saída ao inglês.
-    const ctx = await buildContext({ target: CORPUS + ALVO, network: "mainnet", generatedAt: DATA, offline: true, lang: "pt" });
-    const md = renderMonitoringPlan(ctx);
-    const r = validateMonitoringPlan(ctx, md, ctx.monitors ?? []);
-    assert.equal(item(r, "O baseline vem de observação").status, "gap");
-    assert.ok(item(r, "Cada monitor tem dono nomeado"), "pergunta de dono não saiu em português");
-    assert.ok(
-      (r.needsInput ?? []).some((b) => /Atribuir dono e canal de notificação/.test(b)),
-      `pendência de dono não saiu em português (ou não foi para needsInput): ${pendencias(r).join(" | ")}`,
-    );
-    // as seções do template continuam em inglês nos dois idiomas
-    assert.match(md, /## Did we do a good job\?/);
-    assert.match(md, /\| Pergunta do checklist \| Situação \| Detalhe \|/);
-    const tm = renderThreatModel(ctx);
-    assert.equal(item(validateThreatModel(ctx, tm), "nível de evidência").status, "ok");
-  } finally {
-    setLang("en");
-  }
-});
-
-/* ------------------------------------------------------------------ *
  * SHIP-05 por monitor — "sem baseline" tem três causas e três textos
  *
- * O documento real dizia "nenhuma janela de observação foi coletada" numa linha e imprimia
- * uma janela de 120.664 ledgers seis linhas acima. As três causas são afirmações diferentes:
  *  (a) não houve janela;  (b) houve janela e ela não sustenta ESTE limiar;
  *  (c) o monitor não passa por getEvents — nenhuma janela produziria o baseline dele.
  * ------------------------------------------------------------------ */
@@ -324,7 +362,6 @@ test("(1c) monitor que não passa por getEvents não é acusado de falta de jane
   const md = renderMonitoringPlan(comJanela);
   const r = validateMonitoringPlan(comJanela, md, comJanela.monitors ?? []);
   assert.ok(pendencias(r).length, "contrato de referência não produziu pendência de baseline");
-  // (c) é preenchimento, não falha da ferramenta: nenhuma janela produziria esse baseline.
   assert.ok(
     (r.needsInput ?? []).some((b) => /not event-based; its baseline is the current on-chain value/.test(b)),
     `caso (c) não saiu como preenchimento: ${pendencias(r).join(" | ")}`,
@@ -333,7 +370,6 @@ test("(1c) monitor que não passa por getEvents não é acusado de falta de jane
     !pendencias(r).some((b) => /No observation window/.test(b)),
     "o validador afirmou que não há janela num documento que imprime a janela",
   );
-  // e a contradição não sobrevive no corpo do documento
   assert.doesNotMatch(md, /no observation window was collected/i);
   assert.match(md, /to be recorded at plan approval/);
 });
@@ -350,13 +386,11 @@ test("(1b) zero observado sustenta qualquer-ocorrência, não limiar de taxa", a
   const zero = (ctx.monitors ?? []).filter((m) => /tw_init/.test(m.baseline));
   assert.ok(zero.length, "o contrato de referência não produziu baseline de zero observado");
 
-  // o texto do zero medido chega ao documento como medição, e não vira blocker
   const md = renderMonitoringPlan(ctx);
   assert.match(md, /An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold/);
   const r = validateMonitoringPlan(ctx, md, ctx.monitors ?? []);
   assert.ok(!r.blockers.some((b) => /an observed zero is a measurement/.test(b)), "zero medido com gatilho de qualquer ocorrência virou blocker");
 
-  // o MESMO zero sob um limiar de taxa é limiar sem base — e aí sim é blocker
   const comLimiar = zero.map((m) => ({
     ...m,
     trigger: "More than 12 occurrences of [tw_init] in 1 h (3× the rate measured in the observed window).",
@@ -400,7 +434,7 @@ test("monitor não-evento que declara o mecanismo não é acusado de getEvents q
     !/no executable getEvents filter/.test(item(r, "concrete observable signal").detail),
     "monitor de inspeção de transação, com o mecanismo escrito na linha, foi acusado de nunca disparar",
   );
-  // apagando o mecanismo da linha, o mesmo monitor volta a ser decorativo
+  // apagando o mecanismo do CAMPO do monitor, o mesmo monitor volta a ser decorativo
   const mudos = mons.map((m) => ({ ...m, observable: "Something worth watching.", trigger: "Any occurrence." }));
   const r2 = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), mudos);
   assert.match(item(r2, "concrete observable signal").detail, /no executable getEvents filter/);
@@ -417,12 +451,16 @@ test("a cobertura de topics do spec só se aplica a monitor de evento", async ()
   assert.match(d, /every event-based monitor cites a topic declared in the spec/);
 });
 
+test("monitor que não aparece no documento é blocker", async () => {
+  const ctx = await ctxAlvo();
+  const mons = ctx.monitors ?? [];
+  const md = renderMonitoringPlan(ctx).replace(new RegExp(mons[0].id.replace(/\./g, "\\."), "g"), "—");
+  const r = validateMonitoringPlan(ctx, md, mons);
+  assert.ok(r.blockers.some((b) => b.includes(`Monitor ${mons[0].id} is in the plan's data and does not appear`)), r.blockers.join(" | "));
+});
+
 /* ------------------------------------------------------------------ *
  * §5 e §6 falando do mesmo documento
- *
- * A §5 afirma "nenhum monitor sai daqui como `Active`" e a §6 dizia "o único monitor ATIVO
- * tem a contagem conferida" — sobre um monitor em `Tuning`. Duas seções do mesmo arquivo,
- * afirmações opostas, e um ✔ numa pergunta sobre alertas que nunca dispararam.
  * ------------------------------------------------------------------ */
 
 test("sem monitor `Active`, a linha de precisão histórica nunca sai ✔", async () => {
@@ -444,11 +482,9 @@ test("sem monitor `Active`, a linha de precisão histórica nunca sai ✔", asyn
   assert.equal(linha.status, "n/a");
   assert.match(linha.detail, /No monitor is Active yet/);
   assert.match(linha.detail, /none has alert history/);
-  // e a linha não chama de "ativo" o que a §5 do mesmo documento diz que não está no ar
   assert.doesNotMatch(linha.detail, /The single active monitor|active monitors have/);
   assert.match(md, /No monitor leaves this document as `Active`/);
 
-  // um monitor de fato ligado volta a ter o que medir
   const ligado = mons.map((m, i) => (i === 0 ? { ...m, status: "Active" as const } : m));
   const r2 = validateMonitoringPlan(comObs, md, ligado);
   assert.notEqual(item(r2, "historically accurate").status, "n/a");
@@ -456,11 +492,6 @@ test("sem monitor `Active`, a linha de precisão histórica nunca sai ✔", asyn
 
 /* ------------------------------------------------------------------ *
  * Zero observado de tópico one-shot não é baseline conferido
- *
- * O caso real: 0 eventos `init` numa janela de 186 h sobre um pool inicializado muito antes
- * dela. O zero é medição honesta — e conferência nenhuma: a única ocorrência legítima do
- * tópico é anterior à janela, então o número daria zero qualquer que fosse o comportamento
- * do contrato dentro dela.
  * ------------------------------------------------------------------ */
 
 test("zero observado em gatilho de qualquer-ocorrência não conta como baseline conferido", async () => {
@@ -480,9 +511,7 @@ test("zero observado em gatilho de qualquer-ocorrência não conta como baseline
   assert.match(d, /an observed zero \(measurement\)/);
   assert.match(d, /not count as checked against the window/);
   for (const m of zero) assert.ok(d.includes(m.id), `o baseline de zero de ${m.id} não foi declarado como não conferido`);
-  // o zero medido continua sendo medição: não vira blocker por si só
   assert.ok(!r.blockers.some((b) => /observed zero is a measurement, but it supports only/.test(b)));
-  // e não empurra a pergunta de precisão para ✔
   assert.notEqual(item(r, "historically accurate").status, "ok");
   assert.match(d, /0 baselines with the count checked against the window/);
 });
@@ -498,7 +527,6 @@ test("monitor nem executável por getEvents nem completamente especificado rebai
   const sinal = item(r, "concrete observable signal");
   assert.equal(sinal.status, "gap", "linha ✔ sobre monitor com preenchimento em aberto");
   assert.match(sinal.detail, /neither executable through getEvents nor fully specified/);
-  // os mesmos ids aparecem nos blockers de baseline: é a mesma pendência, dita duas vezes
   const citados = mons.filter((m) => sinal.detail.includes(m.id));
   assert.ok(citados.length, "a linha não nomeia nenhum monitor incompleto");
   assert.ok(
@@ -519,55 +547,36 @@ test("monitor nem executável por getEvents nem completamente especificado rebai
 /**
  * Varredura de forma, e é o que impede a volta do defeito por outro texto: se o detalhe de
  * uma linha precisou dizer que algo ainda tem de ser escrito, preenchido ou definido, aquela
- * linha não é `ok`. Vale nos dois idiomas, sobre contratos de perfis diferentes.
+ * linha não é `ok`. Vale sobre contratos de perfis diferentes.
  */
 test("nenhuma linha ✔ carrega pendência no próprio detalhe", async () => {
   const alvos = [ALVO, COM_EVENTO, "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP.wasm"];
-  const PENDENCIA = /\bhas to\b|\bmust\b|to be filled|to be defined|⟨|\bprecisa\b|a preencher|a definir/i;
-  for (const lang of ["en", "pt"] as const) {
-    try {
-      for (const alvo of alvos) {
-        const ctx = await buildContext({ target: CORPUS + alvo, network: "mainnet", generatedAt: DATA, offline: true, lang });
-        const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), ctx.monitors ?? []);
-        for (const it of r.items) {
-          if (it.status !== "ok") continue;
-          assert.ok(!PENDENCIA.test(it.detail), `${alvo} [${lang}] — linha ✔ com pendência no detalhe: ${it.question} → ${it.detail}`);
-        }
-      }
-    } finally {
-      setLang("en");
+  const PENDENCIA = /\bhas to\b|\bmust\b|to be filled|to be defined|⟨/i;
+  for (const alvo of alvos) {
+    const ctx = await buildContext({ target: CORPUS + alvo, network: "mainnet", generatedAt: DATA, offline: true });
+    const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), ctx.monitors ?? []);
+    for (const it of r.items) {
+      if (it.status !== "ok") continue;
+      assert.ok(!PENDENCIA.test(it.detail), `${alvo} — linha ✔ com pendência no detalhe: ${it.question} → ${it.detail}`);
     }
   }
 });
 
-test("--lang pt: precisão sem monitor ativo e zero observado saem em português", async () => {
-  try {
-    const base = await buildContext({ target: CORPUS + COM_EVENTO, network: "mainnet", generatedAt: DATA, offline: true, lang: "pt" });
-    const ctx: ArtifactContext = {
-      ...base,
-      offline: undefined,
-      observations: {
-        window: JANELA,
-        events: [{ topic: "tw_fund", count: 40, firstLedger: 1000, lastLedger: 18280, ratePerHour: 1.6 }],
-        declaredButUnseen: ["tw_init"],
-      },
-    };
-    ctx.monitors = deriveMonitors(ctx);
-    const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), ctx.monitors ?? []);
-    const prec = item(r, "precisão histórica");
-    assert.equal(prec.status, "n/a");
-    assert.match(prec.detail, /Nenhum monitor está `Active` ainda/);
-    assert.match(item(r, "O baseline vem de observação").detail, /zero observado \(medição\)/);
+/* ------------------------------------------------------------------ *
+ * Dono: não existe no dado, então é sempre preenchimento da equipe
+ * ------------------------------------------------------------------ */
 
-    // o monitor de diff de estado, com a durabilidade em aberto, rebaixa a linha de sinal em pt
-    const diff = await buildContext({ target: CORPUS + "CAM7DY53G63XA4AJRS24Z6VFYAFSSF76C3RZ45BE5YU3FQS5255OOABP.wasm", network: "mainnet", generatedAt: DATA, offline: true, lang: "pt" });
-    const rd = validateMonitoringPlan(diff, renderMonitoringPlan(diff), diff.monitors ?? []);
-    const sinal = item(rd, "sinal observável");
-    assert.equal(sinal.status, "gap");
-    assert.match(sinal.detail, /não (é executável|são executáveis) por getEvents nem completamente especificados?/);
-  } finally {
-    setLang("en");
-  }
+test("dono do alerta é sempre preenchimento da equipe, nunca falha da ferramenta", async () => {
+  const ctx = await ctxAlvo();
+  const mons = ctx.monitors ?? [];
+  const r = validateMonitoringPlan(ctx, renderMonitoringPlan(ctx), mons);
+  const it = item(r, "named owner");
+  assert.equal(it.status, "gap", "linha de dono saiu ✔ sobre uma coluna que é preenchimento em toda linha");
+  assert.ok(
+    (r.needsInput ?? []).some((b) => b.includes(`Assign an owner and a notification channel to ${mons.length}`)),
+    `a pendência de dono não entrou em needsInput: ${pendencias(r).join(" | ")}`,
+  );
+  assert.ok(!r.blockers.some((b) => /Assign an owner/.test(b)), "dono saiu como falha da ferramenta");
 });
 
 /* ------------------------------------------------------------------ *
@@ -584,21 +593,22 @@ test("veredito separa falha da ferramenta de preenchimento da equipe", async () 
   assert.equal(r.verdict, "needs-input");
   assert.equal(r.submittable, false);
   assert.equal(r.submittable, r.verdict === "submittable", "submittable e verdict discordam");
-  // a §1 do template é preenchimento em todo documento gerado: o bytecode não tem propósito de negócio
   assert.ok(
     (r.needsInput ?? []).some((b) => /Write section 1/.test(b)),
     `a lacuna da §1 não entrou em needsInput: ${(r.needsInput ?? []).join(" | ")}`,
   );
-  // e o documento imprime o veredito e a lista, com o título que o time procura
   assert.match(tm, /\*\*NEEDS INPUT\.\*\*/);
   assert.match(tm, /### Input the team must provide before submitting/);
   for (const b of r.needsInput ?? []) assert.ok(tm.includes(b), `pendência ausente do documento: ${b}`);
 
   // afirmação que a análise não sustenta é falha da FERRAMENTA: volta a not-submittable
-  const inflado = tm.replace(/\*\*\[C\]\*\*/g, "**[A]**");
-  const ri = validateThreatModel(ctx, inflado);
+  const soC = {
+    ...ctx,
+    findings: ctx.findings.map((f) => ({ ...f, evidence: f.evidence.map((e) => ({ ...e, tier: "C" as const })) })),
+  };
+  const ri = validateThreatModel(soC as typeof ctx, tm);
   assert.equal(ri.verdict, "not-submittable");
-  assert.ok(ri.blockers.length, "tier inflado não produziu blocker da ferramenta");
+  assert.ok(ri.blockers.length, "evidência que não sustenta o achado não produziu blocker da ferramenta");
 });
 
 test("com as seis letras e a §1 escritas, não sobra preenchimento", async () => {
@@ -613,7 +623,7 @@ test("com as seis letras e a §1 escritas, não sobra preenchimento", async () =
   const comTodas = { ...ctx, findings, gaps: [] };
   // a equipe escreveu a §1 (o aviso de lacuna sai do documento) e as seis letras têm issue
   const texto = `${tm.replace(/\*\*Gap to be filled by the team\.\*\*/g, "**About this protocol.**")}\n${findings
-    .map((f) => `**${f.id}** — ${f.title} (${f.stride}) [A] [C]`)
+    .map((f) => `**${f.id}** — ${f.title} (${f.stride}) ${f.id}.R.1`)
     .join("\n")}\n`;
   const r = validateThreatModel(comTodas as typeof ctx, texto);
   assert.deepEqual(r.needsInput, [], `sobrou preenchimento: ${(r.needsInput ?? []).join(" | ")}`);
@@ -641,22 +651,17 @@ test("cinco achados de init da mesma família saem num bloco só, sem perder id 
   assert.equal(titulos.length, 1, `esperado um bloco agregado, vieram ${titulos.length}: ${titulos.join(" | ")}`);
   assert.match(titulos[0], /^#### Elevation\.1 – Elevation\.5 — `initialization-front-running` in 5 entrypoints$/);
 
-  // com cinco linhas, uma por entrypoint, cada uma carregando o próprio id e os níveis
   const bloco = tm.slice(tm.indexOf(titulos[0]));
   for (const f of init) {
-    const re = new RegExp(`^\\\\| \\\\*\\\\*${f.id}\\\\*\\\\* \\\\| \`${f.entrypoint}\` \\\\| \\\\[A\\\\]\\\\+\\\\[C\\\\] \\\\| ${f.severity} \\\\|`, "m");
+    const re = new RegExp(`^\\| \\*\\*${f.id}\\*\\* \\| \`${f.entrypoint}\` \\| \\[A\\]\\+\\[C\\] \\| ${f.severity} \\|`, "m");
     assert.match(bloco, re, `linha da tabela agregada ausente para ${f.id}`);
   }
   assert.match(bloco, /\*\*Per-ID anchors:\*\*/);
 
-  // e o validador continua achando cada id, com evidência marcada — nada de âncora perdida
+  // e o validador continua achando cada id — nada de âncora perdida
   const r = validateThreatModel(ctx, tm);
   for (const f of init) {
     assert.ok(!r.blockers.some((b) => b.includes(`${f.id} exists in the analysis`)), `${f.id} sumiu do documento`);
-    assert.ok(
-      !r.blockers.some((b) => b.includes(`Threat ${f.id} appears in the document with no evidence tier`)),
-      `${f.id} ficou sem marca de nível na âncora`,
-    );
   }
   assert.deepEqual(r.blockers, [], `agregação criou blocker: ${r.blockers.join(" | ")}`);
 

@@ -1,6 +1,5 @@
 import { parseModule } from "./wasm.ts";
 import { allHostFns, hostFn } from "./hostfns.ts";
-import { msgs } from "./i18n.ts";
 
 /**
  * A versão do soroban-sdk usada na compilação fica gravada na custom section
@@ -66,34 +65,19 @@ export const PAIRING_CURVE_FNS: ReadonlySet<string> = new Set(
  * Texto dos advisories que chega ao revisor. `id`, `url`, `severity` e as faixas são dado,
  * não texto: ficam fora daqui e idênticos nos dois idiomas.
  */
-const M = msgs({
-  en: {
-    adv1Title: "soroban-sdk-macros: authorization bypass",
-    adv1Trigger:
-      "Only triggers if the contract has `impl Trait for C` with #[contractimpl] AND `impl C` with a function of the same name: " +
-      "the macro exports the inherent function instead of the trait one. The source shows that collision; the bytecode does not.",
-    adv2Title: "Fr equality without modular reduction — may lead to an incorrect authorization decision",
-    adv2Trigger:
-      "Only affects contracts that take `Fr` (BN254/BLS12-381) as input and compare it with ==/!=/assert_eq! without modular reduction.",
-    cmpNaoParseavel: (v: string) => `cmp: version not parseable: ${v}`,
-    metaParcial: (off: number) =>
-      `⟨contractmetav0 could not be decoded past byte ${off}; rssdkver was not read⟩`,
-    faixaNaoParseavel: (min: string, max: string) => `advisory range not parseable: ${min}..${max}`,
-  },
-  pt: {
-    adv1Title: "soroban-sdk-macros: bypass de autorização",
-    adv1Trigger:
-      "Só dispara se o contrato tiver `impl Trait for C` com #[contractimpl] E `impl C` com função de mesmo nome: " +
-      "o macro exporta a função inerente em vez da do trait. O fonte mostra essa colisão; o bytecode não.",
-    adv2Title: "igualdade de Fr sem redução modular — pode levar a decisão de autorização incorreta",
-    adv2Trigger:
-      "Só afeta contratos que recebem `Fr` (BN254/BLS12-381) de entrada e o comparam com ==/!=/assert_eq! sem redução modular.",
-    cmpNaoParseavel: (v: string) => `cmp: versão não parseável: ${v}`,
-    metaParcial: (off: number) =>
-      `⟨contractmetav0 não pôde ser decodificada além do byte ${off}; rssdkver não foi lido⟩`,
-    faixaNaoParseavel: (min: string, max: string) => `faixa de advisory não parseável: ${min}..${max}`,
-  },
-});
+const M = {
+  adv1Title: "soroban-sdk-macros: authorization bypass",
+  adv1Trigger:
+    "Only triggers if the contract has `impl Trait for C` with #[contractimpl] AND `impl C` with a function of the same name: " +
+    "the macro exports the inherent function instead of the trait one. The source shows that collision; the bytecode does not.",
+  adv2Title: "Fr equality without modular reduction — may lead to an incorrect authorization decision",
+  adv2Trigger:
+    "Only affects contracts that take `Fr` (BN254/BLS12-381) as input and compare it with ==/!=/assert_eq! without modular reduction.",
+  cmpNaoParseavel: (v: string) => `cmp: version not parseable: ${v}`,
+  metaParcial: (off: number) =>
+    `⟨contractmetav0 could not be decoded past byte ${off}; rssdkver was not read⟩`,
+  faixaNaoParseavel: (min: string, max: string) => `advisory range not parseable: ${min}..${max}`,
+};
 
 /**
  * Advisories conhecidos contra soroban-sdk. Lista curada manualmente e datada:

@@ -35,8 +35,8 @@ test("examples/ tem pelo menos um par e todo par está completo", () => {
 });
 
 /**
- * A saída é em inglês desde o commit que trocou o default de `--lang`. Um
- * diacrítico português num arquivo de `examples/` significa render antigo.
+ * A saída é em inglês. Um diacrítico português num arquivo de `examples/`
+ * significa render antigo.
  */
 test("nenhum arquivo de examples/ carrega diacrítico português", () => {
   const diacriticos = /[çÇãÃõÕáÁâÂéÉêÊíÍóÓôÔúÚàÀ]/;

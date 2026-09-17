@@ -30,13 +30,13 @@ Description of the protocol, the value it custodies and its operational context:
 
 > A stale address is the most common cause of a monitor that silently stops working. The addresses above hold for the binary identified in the header; re-check after any upgrade.
 
-window of 120662 ledgers (~186 h) — limited by RPC retention.
+window of 120663 ledgers (~185 h) — limited by RPC retention.
 
-**Observed activity (B)** — window of 120662 ledgers (~186 h, ledgers 64346922–64467583):
+**Observed activity (B)** — window of 120663 ledgers (~185 h, ledgers 64347456–64468118):
 
 | Topic | Occurrences | Rate/h | Declared in spec |
 |---|---|---|---|
-| `swap` | 2,319 | 12 | yes |
+| `swap` | 2,317 | 12 | yes |
 
 ## What could go wrong?
 
@@ -71,7 +71,7 @@ The template asks for at least one issue per letter. These are declared instead 
 
 | Monitor ID | Observable on-chain effect | Trigger condition & baseline | Monitoring rule (plain-language intent) |
 |---|---|---|---|
-| Elevation.1.M.1 | initialization executed — event with topics [init] | Any occurrence of [init], which never happened in the observed window. **Baseline (B):** init probe (B, unsigned simulateTransaction, ledger 64467583): guarded — simulation reverted with Error(Contract, #41) = `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance 0 emissions of [init] in the window of 120662 ledgers (~186 h, ledgers 64346922–64467583) — topic declared in the spec and confirmed as never observed. An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold. | Alert on initialization front running in `initialize`, tracing back to threat Elevation.1. |
+| Elevation.1.M.1 | initialization executed — event with topics [init] | Any occurrence of [init], which never happened in the observed window. **Baseline (B):** init probe (B, unsigned simulateTransaction, ledger 64468118): guarded — simulation reverted with Error(Contract, #41) = `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance 0 emissions of [init] in the window of 120663 ledgers (~185 h, ledgers 64347456–64468118) — topic declared in the spec and confirmed as never observed. An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold. | Alert on initialization front running in `initialize`, tracing back to threat Elevation.1. |
 | Repudiate.1.M.1 | diff of the 6 keys inferred from the data section (non-exhaustive; entries keyed by runtime arguments are not listed) (`bline`, `FLOCK`, `padmin`, `params`, `pstate`, `schema_v`) across ledgers (getLedgerEntries) — with no event, the state diff is the only possible reading; silent entrypoints: `set_router_authorized`, `snapshot_cumulatives_inside`, `observe_single`, `observe`, `poke_oracle`, `poke_oracle_with_hints` | Any occurrence of the observable on this row. No numeric threshold can be set — this monitor is not event-based; its baseline is the current on-chain value (current value of the storage keys, read via getLedgerEntries), to be recorded at plan approval — ⟨to be defined — not derivable from the binary⟩. This is a fill-in, not an observation gap: no `getEvents` window would produce it. Durability ⟨to be filled: temporary / persistent / instance⟩ — needed to build the ledger key. **Baseline: ⚠ no baseline** | Alert on silent mutation in Whole contract (CCR2CH4GQVCZHG7CHFVMNANCK45CU5DVKXZIIITDZQAU3CEJZ7RQH2MQ), tracing back to threat Repudiate.1. |
 
 One line each:
@@ -109,7 +109,7 @@ One line each:
     "condition": {
       "kind": "any-occurrence"
     },
-    "note": "Topics read from `contractspecv0` in the WASM itself, with one `*` per parameter declared in TopicList. On the wire each segment goes as a base64 ScVal symbol — the raw string is rejected with `invalid parameters`; `*` matches exactly one segment and the list must have the same length as the event's (measured on mainnet). Baseline (B): 0 emissions of [init] in the window of 120662 ledgers (~186 h, ledgers 64346922–64467583) — topic declared in the spec and confirmed as never observed. An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold."
+    "note": "Topics read from `contractspecv0` in the WASM itself, with one `*` per parameter declared in TopicList. On the wire each segment goes as a base64 ScVal symbol — the raw string is rejected with `invalid parameters`; `*` matches exactly one segment and the list must have the same length as the event's (measured on mainnet). Baseline (B): 0 emissions of [init] in the window of 120663 ledgers (~185 h, ledgers 64347456–64468118) — topic declared in the spec and confirmed as never observed. An observed zero is a measurement, but it supports only an any-occurrence trigger, not a rate threshold."
   }
 ]
 ```
@@ -133,12 +133,12 @@ Owner and channel do not appear in the binary: 2 rows await that information, an
 |---|---|---|
 | Does every threat in the threat model have a monitor, or a documented reason it cannot be monitored? | ✔ ok | 2/2 threats with a monitor; 41 of 56 invocable entrypoints do not reach contract_event (`__*` reserved exports excluded, CAP-0058) — for those, monitoring through getEvents is impossible. |
 | Does every monitor trace back to an existing threat, with an ID derived from it? | ✔ ok | 2 monitors, all anchored to a threat in the document. |
-| Is the baseline grounded in observation, not guesswork? | ⚠ gap | observed window: 120662 ledgers (~185.55h), 1 distinct topic; without a baseline: Repudiate.1.M.1; 1 baseline is an observed zero (measurement) and does not count as checked against the window — for an any-occurrence trigger the only legitimate occurrence may predate the window: Elevation.1.M.1; 0 baselines with the count checked against the window. |
+| Is the baseline grounded in observation, not guesswork? | ⚠ gap | observed window: 120663 ledgers (~185.47h), 1 distinct topic; without a baseline: Repudiate.1.M.1; 1 baseline is an observed zero (measurement) and does not count as checked against the window — for an any-occurrence trigger the only legitimate occurrence may predate the window: Elevation.1.M.1; 0 baselines with the count checked against the window. |
 | Does every monitor have a defined response? | ✔ ok | 2 monitors with a response. |
-| Does every monitor have a named owner? | ⚠ gap | 0/2 monitors with an owner in the document; without an owner: Elevation.1.M.1, Repudiate.1.M.1. There is a mention of someone responsible elsewhere in the document, but not per monitor. The tool does not have this information — it is neither in the bytecode nor on-chain, and the team has to fill it in before submitting. |
+| Does every monitor have a named owner? | ⚠ gap | 0/2 monitors with a named owner: the Monitor type has no owner field and the §5 column is a fill-in on every row. The information is neither in the bytecode nor on-chain, and the team provides it before submitting. |
 | Have the alerts been historically accurate? | n/a | No monitor is Active yet (2 in the plan, all `Tuning` or `Planned`); 0 carry an observed baseline that was checked against the window, but none has alert history. Accuracy is only answerable after the monitors run: there is no alert yet to be right or wrong about. |
 | Is the on-chain address inventory present and up to date? | ✔ ok | contract id CCR2CH4GQVCZHG7CHFVMNANCK45CU5DVKXZIIITDZQAU3CEJZ7RQH2MQ present in the document (network mainnet). Analysis run over wasm hash `003710b383f9da7d650a7f719a7be479110266427817ebbed61d924505fcd7c7` on 2026-09-17; a different hash on the instance means this plan describes code that is no longer live. |
-| Are the external boundaries (contracts called) in the inventory? | ⚠ gap | 12 entrypoints reach call/try_call (swap, swap_prefunded, collect, collect_protocol, flash_begin, flash_end … (+6)). The destination addresses are runtime arguments: they are not derivable from the bytecode and the tool does not invent them. The inventory has to be completed by hand, or the monitoring covers only half the flow. |
+| Are the external boundaries (contracts called) in the inventory? | ⚠ gap | 12 entrypoints reach call/try_call (swap, swap_prefunded, collect, collect_protocol, flash_begin, flash_end … (+6)). The destination addresses are runtime arguments: not derivable from the bytecode, and the tool does not invent them. The inventory has to be completed by hand, or the monitoring covers only half the flow. |
 | Have off-chain threats been identified and declared out of on-chain scope? | ✔ ok | The document ties the off-chain boundary to what was left out of the on-chain analysis: Spoof, Tamper, Info, DoS. |
 | Does every monitor have a concrete observable signal and an executable trigger? | ⚠ gap | 1 monitor is neither executable through getEvents nor fully specified — the query cannot be built while the fill-in on the row is open (durability of the entry, address or hash): Repudiate.1.M.1; every event-based monitor cites a topic declared in the spec; 1 of 2 monitors turns into an RPC call with no manual translation (topic filter from the contract spec); the rest need getLedgerEntries or transaction introspection. |
 

@@ -64,13 +64,12 @@ test("ping responde objeto vazio — é o health check que todo cliente manda", 
   assert.deepEqual(r, { jsonrpc: "2.0", id: 7, result: {} });
 });
 
-test("tools/list expõe as três ferramentas, com descrição em inglês e o argumento lang", async () => {
+test("tools/list expõe as três ferramentas, com descrição em inglês", async () => {
   const [r] = await conversa([req(1, "tools/list")]);
   const nomes = r.result.tools.map((t: any) => t.name).sort();
   assert.deepEqual(nomes, ["soroguard_analyze", "soroguard_inspect", "soroguard_sdk_advisories"]);
   for (const t of r.result.tools) {
-    assert.deepEqual(t.inputSchema.properties.lang.enum, ["en", "pt"], `${t.name} sem argumento lang`);
-    // a descrição é o que o agente lê para decidir a chamada: inglês por padrão
+    // a descrição é o que o agente lê para decidir a chamada: inglês
     assert.doesNotMatch(t.description, /[áâãéêíóôõúç]/i, `${t.name} com descrição em português`);
     assert.match(t.inputSchema.properties.target.description, /contract id|\.wasm/);
     assert.match(t.inputSchema.properties.network.description, /network/);
@@ -106,7 +105,7 @@ test("tools/call sem o argumento obrigatório target é -32602", async () => {
 });
 
 test("soroguard_inspect roda sobre um .wasm do corpus e devolve o spec", async () => {
-  const [r] = await conversa([req(21, "tools/call", { name: "soroguard_inspect", arguments: { target: ALVO, lang: "pt" } })]);
+  const [r] = await conversa([req(21, "tools/call", { name: "soroguard_inspect", arguments: { target: ALVO } })]);
   assert.equal(r.error, undefined, JSON.stringify(r.error));
   const payload = JSON.parse(r.result.content[0].text);
   assert.equal(payload.target, ALVO);
@@ -147,25 +146,11 @@ test("soroguard_analyze devolve chaves em inglês e texto em inglês por padrão
   assert.match(p.soundnessNote, /^(Call graph complete|call_indirect present)/);
 });
 
-test("lang=pt traduz o texto do payload e mantém as chaves", async () => {
-  const [en, pt] = await conversa([
-    req(51, "tools/call", { name: "soroguard_analyze", arguments: { target: ALVO } }),
-    req(52, "tools/call", { name: "soroguard_analyze", arguments: { target: ALVO, lang: "pt" } }),
-  ]);
-  const a = JSON.parse(en.result.content[0].text);
-  const b = JSON.parse(pt.result.content[0].text);
-  assert.deepEqual(Object.keys(a), Object.keys(b), "as chaves não podem mudar com o idioma");
-  assert.match(b.soundnessNote, /^(Call graph completo|call_indirect presente)/);
-  assert.deepEqual(b.findings.map((f: any) => f.id), a.findings.map((f: any) => f.id));
-  assert.deepEqual(b.findings.map((f: any) => f.class), a.findings.map((f: any) => f.class));
-  if (a.findings.length) assert.notEqual(b.findings[0].title, a.findings[0].title, "título não traduzido");
-});
-
 test("soroguard_sdk_advisories devolve rssdkver/declared/curatedAsOf/note", async () => {
   const [r] = await conversa([req(61, "tools/call", { name: "soroguard_sdk_advisories", arguments: { target: ALVO } })]);
   assert.equal(r.error, undefined, JSON.stringify(r.error));
   const p = JSON.parse(r.result.content[0].text);
   assert.deepEqual(Object.keys(p).sort(), ["advisories", "curatedAsOf", "declared", "note", "rssdkver"]);
-  assert.doesNotMatch(p.note, /[áâãéêíóôõúç]/i, "note em português no padrão");
+  assert.doesNotMatch(p.note, /[áâãéêíóôõúç]/i, "note em português");
   for (const adv of p.advisories) assert.ok("importsMatchingFilter" in adv, "gate hits sem a chave em inglês");
 });

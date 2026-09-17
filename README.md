@@ -59,10 +59,10 @@ because private disclosure to the affected teams is in progress; `docs/PRECISION
 measured numbers without the identities, and the per-finding triage will be published once
 disclosure completes.
 
-**CVE-2026-26267 as inventory.** 41 of 75 mainnet contracts in the corpus declare their SDK
-version in the `contractmetav0` custom section; 34 of those were compiled with a version range
-affected by CVE-2026-26267 (High, authorization bypass in `soroban-sdk-macros`). Of the 20 whose
-source we could obtain, none has the `impl Trait` / `impl C` name collision that triggers the
+**CVE-2026-26267 as inventory.** 69 of the 71 corpus contracts declare their SDK version in the
+`contractmetav0` custom section; 37 of those were compiled with a version range affected by
+CVE-2026-26267 (High, authorization bypass in `soroban-sdk-macros`). Of the 20 whose source we
+could obtain when 34 were exposed under the earlier parser, none has the `impl Trait` / `impl C` name collision that triggers the
 bug; the other 14 could not be concluded (11 with no public source, 3 with a probable but
 unconfirmed one), and **0 were confirmed vulnerable**
 (`docs/CVE-2026-26267-VERIFICACAO.md`). Exposure is a bytecode fact (tier A), exploitability
@@ -101,7 +101,7 @@ with no threat behind it.
 | | What it is | Example |
 |---|---|---|
 | **A** | bytecode fact | `initialize` does not reach `require_auth` |
-| **B** | fact observed on-chain | a 120,662-ledger window (~186 h) recorded 0 events of any topic |
+| **B** | fact observed on-chain | a 239,977-ledger window (~375 h) recorded 12 events across 4 topics; `initialize` reverted already-initialized in simulation |
 | **C** | inference | "this allows front-running if the deploy is not atomic" |
 
 And the asymmetry that everything rests on: **"does not reach X" is proof; "reaches X" is an
@@ -130,7 +130,6 @@ once the package is on npm; from a clone, with no build step, the same commands 
 | Flag | Effect |
 |---|---|
 | `--offline` | do not touch the network (no tier-B baseline) |
-| `--lang en\|pt` | output language; `en` is the default |
 | `-n, --network <name\|url>` | `mainnet`, `testnet`, … or a full https RPC URL |
 | `--timeout <s>` | budget, in seconds, for the on-chain observation phase (default 60) |
 | `-o, --out <dir>` | output directory (default `out`) |
@@ -148,11 +147,10 @@ community RPC that is rate limited.
 | `1` | usage error (bad contract id, unknown network, missing file), or no subcommand |
 | `2` | documents written, but the on-chain observation failed — no tier-B baseline |
 
-**What `--offline` cannot produce.** The baseline in section 4 of the monitoring plan is tier B
-by definition: it is an observation window, not something derivable from bytecode. Offline there
-is no window, so the monitoring plan comes out marked **not submittable**, with the blockers
-named and the reason given (`run without --offline`). That is deliberate — an offline run that
-claimed to be submittable would be inventing the one number the template asks you to measure.
+**What `--offline` cannot produce.** Tier B: the observation window, the init probe and the
+instance wasm hash. Offline the monitoring plan comes out **NOT SUBMITTABLE** with the reason
+(`run without --offline`); an offline run that claimed otherwise would be inventing the one
+number the template asks you to measure.
 
 ## MCP server
 
@@ -165,7 +163,7 @@ three tools:
 | `soroguard_analyze` | call graph reachability per entrypoint, findings tagged by evidence tier, declared suppressions, STRIDE letters with no derivable evidence |
 | `soroguard_sdk_advisories` | the `rssdkver` recorded in the binary checked against known advisories — exposure (tier A), not exploitability |
 
-All three take `target`, optional `network`, and `lang` (`en` \| `pt`).
+All three take `target` and an optional `network`.
 
 ```sh
 claude mcp add soroguard -- npx -y soroguard-mcp
@@ -182,36 +180,36 @@ claude mcp add soroguard -- npx -y soroguard-mcp
 }
 ```
 
-## Precision
+## Precision and recall
 
-The honest version, in the order the numbers were produced:
+Three measurements, all read-only against public source at the deployed commit or unsigned
+on-chain probes. Detail in `docs/PRECISION.md` and `docs/PRECISION-TOP25.md`.
 
-| Step | Measure | What it means |
-|---|---|---|
-| bare auth predicate | precision **≤16%** (upper bound) | derived from name shape across the corpus, not from human ground truth |
-| after three suppression families | `unauthenticated-state-mutation` 89 → 24 findings (today's calibration) | reserved `__` exports (CAP-0058), read-shaped names, permissionless cranks |
-| human triage against source | **9 of 30 real** (30%) | 30 findings triaged one by one; 21 permissionless by design; **0 detector bugs**; 0 allow loss of funds today |
-| negative claims | **30 of 30 confirmed** | every "does not reach `require_auth`" matched the source |
+| Measurement | Sample | Real unauth. mutation | Loss of funds today | False tier-A claims |
+|---|---|---|---|---|
+| calibration batches 1+2 | 17 corpus contracts, 26 findings | 5 / 26 | 0 on the triaged instances | 0 |
+| top 25 by volume | busiest 25 mainnet binaries, all 66 findings | 0 / 7 | 0 / 66 | 0 |
 
-For calibration: CoinFabrik measured the equivalent source-level detector
-(`set-contract-storage`) on 71 contracts and reported 59.41% false positives. That is a
-different quantity — theirs is measured against human ground truth, the ≤16% above is a
-name-shape upper bound — and saying so is more useful than pretending they are comparable.
+The missing-authorization detector finds real cases only in small, low-traffic contracts; at the
+top of mainnet it finds design (timelocked admin queues, permissionless cranks, self-paying
+`claim`), not bugs. In every batch every negative claim matched the source. What the tool is worth
+on busy code is the inventory, the data-flow diagram, the declared gaps and the refusal to invent
+a baseline.
 
-The triage numbers were measured **before this week's detector changes**, which suppressed
-`gauges_get_reward_info` and capped cross-call findings at High; both changes remove findings,
-so the measured precision is a floor for the current code, not a description of it.
+**Recall**, first evidence from the top-25 triage: three things the source showed and the tool
+missed — an SDK version hidden by a duplicated custom section (parser fixed), third-party state
+tampering through a permissionless entrypoint (new detector), and a signature verifier implemented
+inside the contract (new detector). Recall on a labelled corpus (the Audit Bank's 57 public
+reports) is still the measurement that is missing.
 
-**What is not measured: recall.** There is no labelled ground truth, so there is no number for
-what the tool misses. That is the first question a reviewer should ask, and the answer today is
-that we do not know.
-
-Detail: `docs/PRECISION.md` (the 30-finding triage, summarised by shape until private disclosure completes) and `docs/CALIBRACAO.md`
-(the iteration log).
+For calibration against source-level tools: CoinFabrik measured its `set-contract-storage`
+detector on 71 contracts at 59.41% false positives. Bytecode reachability is not better than
+source analysis at this class; it answers a different question (what is live).
 
 ## Reproducibility
 
-The corpus is committed, not fetched at test time. `corpus/*.wasm` is 75 mainnet contracts;
+The corpus is committed, not fetched at test time. `corpus/*.wasm` is 71 mainnet contracts (4 more
+are withheld pending private disclosure, see `corpus/README.md`);
 `corpus/index.json` records the sha256 of each file, which is the wasm hash on-chain, so anyone
 can verify the committed bytes are what is deployed:
 
@@ -228,7 +226,7 @@ same wasm always produces byte-identical documents.
 
 ## Mainnet census
 
-The 75-contract corpus is a sample. To check whether it is a representative one, the same
+The corpus is a sample. To check whether it is a representative one, the same
 analysis was run over **every distinct contract binary deployed on Stellar mainnet**:
 
 ```sh
@@ -256,7 +254,7 @@ project enters this repository — see `SECURITY.md`.
 
 | Measurement | Value |
 |---|---|
-| Tests (`pnpm test`) | **215 passing** of 215 |
+| Tests (`pnpm test`) | **208 passing** of 208 |
 | Corpus (`corpus/*.wasm`) | **71 mainnet contracts**, 1,726 entrypoints, 0 parse failures |
 | Findings | **164** total · **2.3 per contract** |
 | By class | 48 `silent-mutation` · 38 `vulnerable-sdk` · 35 `initialization-front-running` · 13 `self-implemented-signature-verification` · 10 `unauthenticated-state-mutation` · 9 `archival-risk` · 7 `third-party-state-tampering` · 3 `host-prng-in-value-path` · 1 `write-before-auth` |
@@ -265,7 +263,7 @@ project enters this repository — see `SECURITY.md`.
 | Downgrades (reported, not suppressed) | **4**<br>4 — reaches call/try_call — authorization may live in the callee, severity capped at High |
 | SDK version declared (`rssdkver`) | **69 of 71** |
 | In a CVE-2026-26267 affected range (High) | **37 of 69** that declare a version |
-| Source lines (`src` + `test`) | 16,092 in 31 files |
+| Source lines (`src` + `test`) | 13,546 in 31 files |
 <!-- stats:end -->
 
 ## What it does not do
@@ -284,21 +282,20 @@ project enters this repository — see `SECURITY.md`.
 
 These are boundaries, not bugs, and the documents say so in the output.
 
-- **Spoofing and Information disclosure are zero on 75 of 75 contracts.** Both depend on
-  identity and on data exposure, which are not observable in a contract's bytecode. The template
-  asks for at least one issue per STRIDE letter; these two always come out as a declared gap
-  requiring manual review of the off-chain flow.
-- **57 of 75 contracts declare no events in their spec.** For those, no tier-B baseline is
-  possible by construction — there is no topic filter to observe. `#[contractevent]` is recent
-  and most deployed contracts predate it.
-- **No document passes its own checklist with no human input.** The threat model blocks on every
-  STRIDE letter the bytecode cannot fill (four of six for the median contract); the monitoring
-  plan blocks on owner and channel, and on a baseline for the 57 eventless contracts. State-diff monitoring via `getLedgerEntries`, which is
-  what the 57 eventless contracts need, is not built.
-- **Storage durability and TTL are not readable from the bytecode** in the general case: the
-  durability argument is usually not an immediate literal at the call site.
-- **The addresses a contract calls are not derivable** — they are runtime arguments. The
-  monitoring plan's inventory says that instead of inventing them.
+- **Spoofing and Information disclosure come out as gaps on most contracts.** Identity and data
+  exposure are not observable in bytecode. The exception is the signature-verifier detector,
+  which turns Spoofing into an issue on 13 of 71 corpus contracts.
+- **Most contracts declare no events** (57 of 71 in the corpus, 23 of the 25 busiest on mainnet),
+  so no event-based baseline exists for them. State-diff monitoring via `getLedgerEntries` is
+  declared as a fill-in, not built.
+- **No document passes its own checklist without human input.** The threat model needs the team
+  for every STRIDE letter the bytecode cannot fill; the monitoring plan needs owner and channel.
+  The verdict says exactly which items, and separates them from the tool's own failures.
+- **Storage durability and TTL are not readable from the bytecode** in the general case; the
+  archival finding is declared with that gap.
+- **The addresses a contract calls are not derivable** — they are runtime arguments.
+- **Positive reachability is over-approximate.** Every "reaches X" carries a hop count and, past
+  two hops, a review warning; measured precision is above.
 
 ## How this was built
 
@@ -308,7 +305,8 @@ disclosure is specific rather than a checkbox.
 soroguard was built with AI coding agents: a first session of about 41 minutes of wall-clock
 time producing the parser, the detectors, the renderers and the corpus tooling, followed by a
 review and hardening pass (English output, committed corpus, fail-closed parser, recalibrated
-detectors, packaging) driven the same way. The design decisions, the quality contract in
+detectors, packaging, a whole-mainnet census, a triage of the 25 busiest contracts, an init
+probe and a de-bloat pass) driven the same way. The design decisions, the quality contract in
 `docs/PROBLEMA.md`, and every number published here were reviewed by a human.
 
 Specifically human-verified, not agent-asserted:
@@ -319,7 +317,7 @@ Specifically human-verified, not agent-asserted:
 - the ~40 audit reports the threat taxonomy was confronted with
   (`docs/TAXONOMIA-VALIDACAO.md`).
 
-Not measured, by anyone: recall.
+Recall has first evidence (three misses, above) but no labelled-corpus number yet.
 
 ## Documentation
 

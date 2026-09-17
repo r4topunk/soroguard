@@ -98,7 +98,7 @@ One asymmetry changes how everything below reads: **"does not reach `require_aut
 
 In every column, "yes" means it **reaches** the corresponding host function on some call-graph path, not that it always executes it.
 
-**durability** is the `StorageType` of the writes this entrypoint reaches — `temp` (`Temporary`), `pers` (`Persistent`), `inst` (`Instance`). It is read from the deployed binary: in `put_contract_data`/`del_contract_data` the storage type is the last argument, so a literal at the call site is that argument by construction. The three durabilities are not interchangeable — a `Temporary` entry is deleted permanently when it expires and CAP-0066 does not restore it, and `Instance` is one 64 KiB ledger entry loaded in full on every invocation. `?` means the entrypoint writes but the storage type reaches the call computed, typically through a generic helper that takes durability as a parameter; `—` means no write is reached. Read literally at 30 of 32 storage call sites in this module. This column is a description of the contract's storage layout, not a finding: each durability is correct for some data and wrong for other data, and which one this contract holds is not derivable from the bytecode.
+**durability** is the `StorageType` of the writes reached: `temp`, `pers`, `inst`. The three are not interchangeable — `temp` is deleted for good on expiry, `inst` shares one 64 KiB entry. `?` means the type reaches the call computed; `—` means no write. Read literally at 30 of 32 storage call sites. It describes the storage layout; it is not a finding.
 
 ### Inferred data stores
 
@@ -108,15 +108,15 @@ Durability is **not** attributable to a key from this list. The `StorageType` is
 
 ### On-chain activity observed (tier B)
 
-Window: ledgers 64346922–64467583 (120662 ledgers, ~185.55h).
+Window: ledgers 64347456–64468118 (120663 ledgers, ~185.47h).
 
-window of 120662 ledgers (~186 h) — limited by RPC retention.
+window of 120663 ledgers (~185 h) — limited by RPC retention.
 
 | Topic | Occurrences | Ledgers | Events/hour |
 |---|---|---|---|
-| `swap` | 2319 | 64347217–64466954 | 12.498 |
+| `swap` | 2317 | 64347932–64466954 | 12.493 |
 
-Topics declared in the spec and not observed in the window: `init`, `mint`, `burn`, `collect`, `collect_p`, `flash_begin`, `flash_end`, `upgraded`, `migrated`, `admin_xfer`, `upg_revoked`, `paused`, `unpaused`. Absence over a ~185.55 h window is not evidence the action never happens — only that it did not happen in that window.
+Topics declared in the spec and not observed in the window: `init`, `mint`, `burn`, `collect`, `collect_p`, `flash_begin`, `flash_end`, `upgraded`, `migrated`, `admin_xfer`, `upg_revoked`, `paused`, `unpaused`. Absence over a ~185.47 h window is not evidence the action never happens — only that it did not happen in that window.
 
 ### Data flow diagram
 
@@ -439,11 +439,11 @@ The template asks for at least one issue per letter. Letters without a finding a
 - **[C]** *(inference — requires human review)* — Severity rule applied: High only when the already-initialized guard is NOT reachable AND the path to the write is ≤ 2 hops; Medium when the guard IS reachable or the path is longer. Here: guard reachable = yes, 2 hops → Medium.
 - **[C]** *(inference — requires human review)* — The contract DOES export `__constructor`, so the deploy itself initializes atomically (CAP-0058). An init-shaped entrypoint kept alongside it is either a second-stage initializer or a legacy one kept for compatibility — in both readings the risk is front-running / re-initialization of that stage, not a generic unauthenticated writer.
 
-> **Tier B/C note.** Observed traffic (2319 events over ~185.55 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
+> **Tier B/C note.** Observed traffic (2317 events over ~185.47 h) indicates this instance is already initialized, so the tier C wording above describes a window that has most likely already closed. The residual risk is **re-initialization**, and that depends on a guard the bytecode cannot show: `has_contract_data` IS in the reachable set of `initialize` — a likely already-initialized guard when present, though reachability does not prove it covers this path.
 
 > **Init probe (tier B).**
 >
-> - `initialize` — Probe (unsigned simulateTransaction, ledger 64467583): **guarded** — simulation reverted with Error(Contract, #41) = `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
+> - `initialize` — Probe (unsigned simulateTransaction, ledger 64468118): **guarded** — simulation reverted with Error(Contract, #41) = `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot initializer has already fired on this instance.
 >
 > The front-running window is closed on this instance; residual risk is limited to a future re-deploy of the same code with the same non-atomic initialization.
 

@@ -24,7 +24,6 @@ import {
 } from "../src/probe.ts";
 import type { Finding } from "../src/detect.ts";
 import type { ErrEnum } from "../src/model.ts";
-import { setLang } from "../src/i18n.ts";
 import { buildContext } from "../src/pipeline.ts";
 import { renderThreatModel } from "../src/render/threatmodel.ts";
 
@@ -236,16 +235,6 @@ test("casoDeErro resolve o código pelo enum do próprio contrato, não por conv
   assert.equal(casoDeErro(ERROS, 99), undefined);
   // Sem enum no spec, #3 não vira "já inicializado" por sorte de número.
   assert.equal(classificar("initialize", { ok: false, error: "Error(Contract, #3)" }, []).kind, "inconclusive");
-});
-
-test("o detalhe da sondagem segue o idioma da execução", async () => {
-  try {
-    setLang("pt");
-    const r = await sondar(fixa({ ok: true }));
-    assert.match(r.detail, /TEVE SUCESSO/);
-  } finally {
-    setLang("en");
-  }
 });
 
 

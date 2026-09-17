@@ -43,18 +43,18 @@ storage write, 12 reach `call`/`try_call` — over storage keys `bline`,
 concentrated-liquidity AMM pool. The project behind the address is not
 identified in our corpus index and is not guessed here.
 
-The observed window was 120,662 ledgers (~185.55 h, ledgers
-64346922–64467583); the monitoring plan's own window line reads *"window of
-120662 ledgers (~186 h) — limited by RPC retention"* — this collector reached
+The observed window was 120,663 ledgers (~185.47 h, ledgers
+64347456–64468118); the monitoring plan's own window line reads *"window of
+120663 ledgers (~185 h) — limited by RPC retention"* — this collector reached
 the end of the retained range before its budget ran out, unlike the busier
-contract below. Exactly 1 distinct topic appeared: `swap`, 2,319 times
+contract below. Exactly 1 distinct topic appeared: `swap`, 2,317 times
 (~12.5/h). The other 13 declared topics, including `init`, were never seen.
 The threat model derives two threats — `Elevation.1` (`initialize` reaches
 state initialization without requiring authorization, severity cell: "Medium
 — tier C, a risk judgement, not a bytecode fact") and `Repudiate.1` (6 of 20
 state-changing entrypoints emit no event, same severity cell) — and declares
 four STRIDE letters (Spoof, Tamper, Info, DoS) as gaps. `initialize` carries
-an on-chain probe: *"Probe (unsigned simulateTransaction, ledger 64467583):
+an on-chain probe: *"Probe (unsigned simulateTransaction, ledger 64468118):
 guarded — simulation reverted with Error(Contract, #41) =
 `Error::PoolAlreadyInitialized`, an already-initialized guard: the one-shot
 initializer has already fired on this instance."*
@@ -86,14 +86,15 @@ write, 25 reaching `call`/`try_call`, and a single declared event type
 
 It is also the only contract in the set busy enough that the collector spent
 its whole budget without reaching back very far — its window line reads
-*"window of 40160 ledgers (~62 h) — limited by the RPC request budget, not by
+*"window of 29796 ledgers (~46 h) — limited by the RPC request budget, not by
 retention: the collector could not page the whole retained range in the time
-allowed, and the contracts that emit most events hit this first."* That
-window (~61.76 h, ledgers 64427432–64467591) holds 42,457 events across 9
-distinct topics — the most of any of the 18. `update_reserves` (14,149),
-`pool_state` (14,075) and `trade` (14,062) run at ~228–229 events/hour each;
-`claim_fees` (77), `claim_reward` (66), `position_update` (13),
-`deposit_liquidity` (9), `withdraw_liquidity` (4) and `claim_protocol_fee`
+allowed, and the contracts that emit most events hit this first; baselines
+are rates over the observed slice, not totals."* That window (~45.8 h,
+ledgers 64438336–64468131) holds 32,981 events across 9 distinct
+topics — the most of any of the 18. `update_reserves` (10,991),
+`pool_state` (10,938) and `trade` (10,929) run at ~239–240 events/hour each;
+`claim_fees` (55), `claim_reward` (48), `position_update` (9),
+`deposit_liquidity` (7), `claim_protocol_fee` (2) and `withdraw_liquidity`
 (2) make up the tail. Note that only one of those nine, `claim_fees`, is
 declared in the contract's spec: the observation sees more than the spec
 admits to.
@@ -104,7 +105,7 @@ one standalone finding: `Elevation.1 – Elevation.5 —` `initialization-front-
 `initialize_boost_config`, `initialize_rewards_config`, each Medium — tier C,
 each flagged "confirm before treating as a finding"), and `Repudiate.1` (11
 of 43 state-changing entrypoints emit no event, High — tier C). Each of the
-five carries its own on-chain probe, all at ledger 64467591: `init_pools_plane`
+five carries its own on-chain probe, all at ledger 64468131: `init_pools_plane`
 — *"guarded — simulation reverted with Error(Contract, #202) =
 `ConcentratedPoolError::PlaneAlreadyInitialized`"*; `initialize` — *"guarded
 — simulation reverted with Error(Contract, #201) =
@@ -141,9 +142,9 @@ multisig smart account example (`MultisigContract`, soroban-sdk 23.4.0): a
 management functions, and `execute`. Of 13 invocable entrypoints, 10 reach
 `require_auth*`, 9 reach a storage write and 5 reach `call`/`try_call`.
 
-A window of 120,661 ledgers (~185.55 h, ledgers 64346934–64467594) was
+A window of 120,661 ledgers (~185.47 h, ledgers 64347474–64468134) was
 collected — its window line, like the pool above's, reads *"window of 120661
-ledgers (~186 h) — limited by RPC retention"* — and it holds no event of any
+ledgers (~185 h) — limited by RPC retention"* — and it holds no event of any
 topic. This is the case the quality contract exists for: the number is
 measured, not missing, and the document says so in those words — *"no event
 of any topic was observed for this contract in the window — absence of

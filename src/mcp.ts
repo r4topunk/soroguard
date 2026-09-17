@@ -19,7 +19,6 @@ import type { ProbeResult } from "./probe.ts";
 import { detectFull, lacunas, fronteiras, delegacoes } from "./detect.ts";
 import { fetchWasm, modelFromEntries, parseSpecEntries, NETWORKS, redactUrl } from "./spec.ts";
 import { readSdkMeta, advisoriesForWasm, ADVISORIES_AS_OF } from "./sdkver.ts";
-import { setLang, parseLang, msgs } from "./i18n.ts";
 
 type Req = { jsonrpc: "2.0"; id?: number | string | null; method: string; params?: any };
 
@@ -51,68 +50,33 @@ async function carregar(alvo: string, network: string): Promise<Uint8Array> {
  * com quais argumentos, então ela diz o que a ferramenta devolve, não só o que ela faz.
  * Chaves do JSON de resposta NÃO passam por aqui: são contrato, não texto.
  */
-const M = msgs({
-  en: {
-    argLang: "output language",
-    argTarget: "contract id (C… , 56 chars) of a deployed contract, or the path to a local .wasm file",
-    argNetwork: "network to resolve the contract id on; ignored when target is a local .wasm path",
-    argMinSeverity: "drop findings below this severity",
-    argProbe:
-      "probe each init finding with an unsigned, read-only simulateTransaction and return the result under `probes` (deployed target only; never signs or submits). Set false to skip the network round-trip.",
-    descInspect:
-      "Reads the contract spec of a DEPLOYED Soroban contract (straight from the WASM on mainnet/testnet, no source code needed). Returns the typed functions with their parameters, the declared error enums, and the events declared in the spec with their prefixTopics — which are the actual filters of a getEvents call.",
-    descAnalyze:
-      "Analyzes the bytecode: builds the call graph and answers, per exported entrypoint, which Soroban host functions it reaches (require_auth, put_contract_data, contract_event, update_current_contract_wasm, call). Returns security findings whose every claim is labelled by evidence tier — A is a bytecode fact, C is an inference — plus the declared suppressions and the STRIDE letters with no derivable evidence.",
-    descAdvisories:
-      "Reads the soroban-sdk version recorded in the WASM's contractmetav0 custom section and checks it against known advisories. The source shows the pattern an advisory requires; what only the artifact shows is which SDK compiled the binary on the ledger (the repository may have been updated after the deploy). The result is exposure (tier A), not exploitability.",
-    erroFerramenta: (nome: string, disponiveis: string) =>
-      `unknown tool: "${nome}". Available: ${disponiveis}`,
-    erroTarget: (nome: string) => `missing required argument: "target" (string) in ${nome}`,
-    erroParams: 'invalid params for tools/call: requires { name: string, arguments?: object }',
-    erroMetodo: (m: string) => `unknown method: ${m}`,
-    erroExecucao: (m: string) => `ERROR: ${m}`,
-    avisoSdk:
-      "Exposure is a bytecode fact (tier A); exploitability is not confirmed (tier C) and requires human review. The severity listed is the advisory's, not the contract's.",
-    avisoSemSdk: "The contract does not declare rssdkver — absence of data, not absence of risk.",
-    soundnessSolido: "Call graph complete: NEGATIVE claims (does not reach X) are proof.",
-    soundnessAproximado:
-      "call_indirect present: the call graph is incomplete and not even the negatives are proof. Every claim is downgraded.",
-  },
-  pt: {
-    argLang: "idioma da saída",
-    argTarget: "contract id (C… , 56 chars) de um contrato deployado, ou o caminho de um .wasm local",
-    argNetwork: "rede em que resolver o contract id; ignorado quando o target é o caminho de um .wasm local",
-    argMinSeverity: "descarta achados abaixo desta severidade",
-    argProbe:
-      "sonda cada achado de init com uma simulateTransaction não assinada e read-only, e devolve o resultado em `probes` (só com alvo deployado; nunca assina nem submete). Use false para pular a ida à rede.",
-    descInspect:
-      "Lê o contract spec de um contrato Soroban DEPLOYADO (direto do WASM em mainnet/testnet, sem precisar do código-fonte). Devolve as funções tipadas com seus parâmetros, os enums de erro declarados e os eventos declarados no spec com seus prefixTopics — que são os filtros reais de uma chamada getEvents.",
-    descAnalyze:
-      "Analisa o bytecode: monta o call graph e responde, por entrypoint exportado, quais host functions do Soroban ele alcança (require_auth, put_contract_data, contract_event, update_current_contract_wasm, call). Devolve achados de segurança com cada afirmação rotulada por nível de evidência — A é fato de bytecode, C é inferência — mais as supressões declaradas e as letras do STRIDE sem evidência derivável.",
-    descAdvisories:
-      "Lê a versão do soroban-sdk gravada na custom section contractmetav0 do WASM deployado e confronta com advisories conhecidos. O fonte mostra o padrão que o advisory exige; o que só o artefato mostra é qual SDK compilou o binário no ledger (o repositório pode ter sido atualizado depois do deploy). O resultado é exposição (nível A), não explorabilidade.",
-    erroFerramenta: (nome: string, disponiveis: string) =>
-      `ferramenta desconhecida: "${nome}". Disponíveis: ${disponiveis}`,
-    erroTarget: (nome: string) => `argumento obrigatório ausente: "target" (string) em ${nome}`,
-    erroParams: "params inválido para tools/call: exige { name: string, arguments?: object }",
-    erroMetodo: (m: string) => `método desconhecido: ${m}`,
-    erroExecucao: (m: string) => `ERRO: ${m}`,
-    avisoSdk:
-      "Exposição é fato de bytecode (nível A); explorabilidade não confirmada (nível C) e exige revisão humana. A severidade listada é a do advisory, não do contrato.",
-    avisoSemSdk: "O contrato não declara rssdkver — ausência de dado, não ausência de risco.",
-    soundnessSolido: "Call graph completo: afirmações NEGATIVAS (não alcança X) são prova.",
-    soundnessAproximado:
-      "call_indirect presente: o call graph é incompleto e nem as negativas são prova. Toda afirmação está rebaixada.",
-  },
-});
+const M = {
+  argTarget: "contract id (C… , 56 chars) of a deployed contract, or the path to a local .wasm file",
+  argNetwork: "network to resolve the contract id on; ignored when target is a local .wasm path",
+  argMinSeverity: "drop findings below this severity",
+  argProbe:
+    "probe each init finding with an unsigned, read-only simulateTransaction and return the result under `probes` (deployed target only; never signs or submits). Set false to skip the network round-trip.",
+  descInspect:
+    "Reads the contract spec of a DEPLOYED Soroban contract (straight from the WASM on mainnet/testnet, no source code needed). Returns the typed functions with their parameters, the declared error enums, and the events declared in the spec with their prefixTopics — which are the actual filters of a getEvents call.",
+  descAnalyze:
+    "Analyzes the bytecode: builds the call graph and answers, per exported entrypoint, which Soroban host functions it reaches (require_auth, put_contract_data, contract_event, update_current_contract_wasm, call). Returns security findings whose every claim is labelled by evidence tier — A is a bytecode fact, C is an inference — plus the declared suppressions and the STRIDE letters with no derivable evidence.",
+  descAdvisories:
+    "Reads the soroban-sdk version recorded in the WASM's contractmetav0 custom section and checks it against known advisories. The source shows the pattern an advisory requires; what only the artifact shows is which SDK compiled the binary on the ledger (the repository may have been updated after the deploy). The result is exposure (tier A), not exploitability.",
+  erroFerramenta: (nome: string, disponiveis: string) =>
+    `unknown tool: "${nome}". Available: ${disponiveis}`,
+  erroTarget: (nome: string) => `missing required argument: "target" (string) in ${nome}`,
+  erroParams: 'invalid params for tools/call: requires { name: string, arguments?: object }',
+  erroMetodo: (m: string) => `unknown method: ${m}`,
+  erroExecucao: (m: string) => `ERROR: ${m}`,
+  avisoSdk:
+    "Exposure is a bytecode fact (tier A); exploitability is not confirmed (tier C) and requires human review. The severity listed is the advisory's, not the contract's.",
+  avisoSemSdk: "The contract does not declare rssdkver — absence of data, not absence of risk.",
+  soundnessSolido: "Call graph complete: NEGATIVE claims (does not reach X) are proof.",
+  soundnessAproximado:
+    "call_indirect present: the call graph is incomplete and not even the negatives are proof. Every claim is downgraded.",
+};
 
-/** Argumento comum a todas as ferramentas. */
-const langArg = () => ({ type: "string", enum: ["en", "pt"], default: "en", description: M.argLang }) as const;
-
-/**
- * Montadas a cada `tools/list` para que a descrição saia no idioma corrente — construí-las
- * no topo do módulo congelaria o texto no idioma que valia no import.
- */
+/** Schemas das ferramentas expostas no `tools/list`. */
 const ferramentas = () => [
   {
     name: "soroguard_inspect",
@@ -122,7 +86,6 @@ const ferramentas = () => [
       properties: {
         target: { type: "string", description: M.argTarget },
         network: { type: "string", enum: Object.keys(NETWORKS), default: "mainnet", description: M.argNetwork },
-        lang: langArg(),
       },
       required: ["target"],
     },
@@ -137,7 +100,6 @@ const ferramentas = () => [
         network: { type: "string", enum: Object.keys(NETWORKS), default: "mainnet", description: M.argNetwork },
         minSeverity: { type: "string", enum: ["Low", "Medium", "High", "Critical"], default: "Low", description: M.argMinSeverity },
         probe: { type: "boolean", default: true, description: M.argProbe },
-        lang: langArg(),
       },
       required: ["target"],
     },
@@ -150,7 +112,6 @@ const ferramentas = () => [
       properties: {
         target: { type: "string", description: M.argTarget },
         network: { type: "string", enum: Object.keys(NETWORKS), default: "mainnet", description: M.argNetwork },
-        lang: langArg(),
       },
       required: ["target"],
     },
@@ -168,9 +129,6 @@ class RpcError extends Error {
 }
 
 async function chamar(nome: string, a: any): Promise<string> {
-  // Antes de qualquer texto: os achados nascem em `detectFull`, e até a mensagem de erro
-  // precisa sair no idioma pedido.
-  setLang(parseLang(a?.lang));
   // Switch explícito: um `name` desconhecido não pode cair no analyze por queda de fluxo.
   if (!TOOL_NAMES.has(nome)) {
     throw new RpcError(-32602, M.erroFerramenta(nome, [...TOOL_NAMES].join(", ")));
@@ -305,10 +263,8 @@ async function despachar(r: Req): Promise<void> {
 }
 
 /**
- * As requisições são servidas UMA DE CADA VEZ. O idioma é estado global do processo
- * (`setLang`), então despachar em paralelo deixava uma chamada com `lang: "pt"` traduzir os
- * achados de outra que estava no meio da análise em inglês. Serializar custa throughput que
- * um servidor stdio não tem como usar, e devolve determinismo à resposta.
+ * As requisições são servidas UMA DE CADA VEZ. Serializar custa throughput que um servidor
+ * stdio não tem como usar, e devolve determinismo à resposta.
  */
 let fila: Promise<void> = Promise.resolve();
 

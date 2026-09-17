@@ -1,6 +1,6 @@
 {
   "name": "soroguard",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Generates a STRIDE threat model and an on-chain monitoring plan from the deployed WASM of a Soroban contract, in the official Stellar templates (SCF Build tranche #2).",
   "type": "module",
   "bin": {

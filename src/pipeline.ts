@@ -9,39 +9,23 @@ import { buildDfd } from "./render/dfd.ts";
 import { deriveMonitors } from "./monitors.ts";
 import { observe } from "./events.ts";
 import { probeInitFindings, resumoDeProbes, sondaveis } from "./probe.ts";
-import { setLang, msgs } from "./i18n.ts";
-import type { Lang } from "./i18n.ts";
 import type { ArtifactContext } from "./artifact.ts";
 
 /** Formato canônico de um contract id Soroban (StrKey `C` + 55 chars base32). */
 export const CONTRACT_ID_RE = /^C[A-Z2-7]{55}$/;
 
-const M = msgs({
-  en: {
-    naoDerivavel: "⟨not derivable from the file⟩",
-    observando: (rede: string) => `observing on-chain events on ${rede}, ~15 s…`,
-    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number, paginas: number, limite: string) =>
-      `observed window: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insufficient for a baseline" : ""}, ${topics} distinct topics, ${paginas} getEvents ${paginas === 1 ? "page" : "pages"}, limited by ${limite}`,
-    falhou: (erro: string) => `on-chain observation failed: ${erro}`,
-    timeout: (s: number) => `timed out after ${s} s`,
-    sondando: (n: number) => `probing ${n} init ${n === 1 ? "finding" : "findings"} with unsigned simulateTransaction…`,
-    sondado: (g: number, o: number, i: number) => `probe: ${g} guarded · ${o} open · ${i} inconclusive`,
-    baselineProbe: (k: string, d: string, l: number | undefined) =>
-      `init probe (B, unsigned simulateTransaction${l ? `, ledger ${l}` : ""}): ${k} — ${d}`,
-  },
-  pt: {
-    naoDerivavel: "⟨não derivável do arquivo⟩",
-    observando: (rede: string) => `observando eventos on-chain em ${rede}, ~15 s…`,
-    janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number, paginas: number, limite: string) =>
-      `janela observada: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insuficiente para baseline" : ""}, ${topics} topics distintos, ${paginas} ${paginas === 1 ? "página" : "páginas"} de getEvents, limitada por ${limite}`,
-    falhou: (erro: string) => `observação on-chain falhou: ${erro}`,
-    timeout: (s: number) => `timeout após ${s} s`,
-    sondando: (n: number) => `sondando ${n} ${n === 1 ? "achado" : "achados"} de init com simulateTransaction não assinada…`,
-    sondado: (g: number, o: number, i: number) => `sondagem: ${g} guarded · ${o} open · ${i} inconclusive`,
-    baselineProbe: (k: string, d: string, l: number | undefined) =>
-      `sondagem de init (B, simulateTransaction não assinada${l ? `, ledger ${l}` : ""}): ${k} — ${d}`,
-  },
-});
+const M = {
+  naoDerivavel: "⟨not derivable from the file⟩",
+  observando: (rede: string) => `observing on-chain events on ${rede}, ~15 s…`,
+  janela: (ledgers: number, horas: number, de: number, ate: number, insuf: boolean, topics: number, paginas: number, limite: string) =>
+    `observed window: ${ledgers} ledgers (~${horas} h, ${de}–${ate})${insuf ? " — insufficient for a baseline" : ""}, ${topics} distinct topics, ${paginas} getEvents ${paginas === 1 ? "page" : "pages"}, limited by ${limite}`,
+  falhou: (erro: string) => `on-chain observation failed: ${erro}`,
+  timeout: (s: number) => `timed out after ${s} s`,
+  sondando: (n: number) => `probing ${n} init ${n === 1 ? "finding" : "findings"} with unsigned simulateTransaction…`,
+  sondado: (g: number, o: number, i: number) => `probe: ${g} guarded · ${o} open · ${i} inconclusive`,
+  baselineProbe: (k: string, d: string, l: number | undefined) =>
+    `init probe (B, unsigned simulateTransaction${l ? `, ledger ${l}` : ""}): ${k} — ${d}`,
+};
 
 /**
  * O que vai nas células "On-chain address" quando o alvo é um arquivo local cujo nome não
@@ -129,8 +113,6 @@ export async function buildContext(opts: {
   generatedAt: string;
   /** pular a ida à rede para observar eventos (nível B) */
   offline?: boolean;
-  /** idioma da saída; o pipeline aplica `setLang` antes de renderizar */
-  lang?: Lang;
   /** prazo total da fase de observação, em ms (0 = sem prazo) */
   timeoutMs?: number;
   /**
@@ -141,10 +123,6 @@ export async function buildContext(opts: {
   /** progresso legível para stderr — o CLI liga isto; testes não */
   onProgress?: (msg: string) => void;
 }): Promise<ArtifactContext> {
-  // Único ponto que fixa o idioma do pipeline: os achados nascem em `detectFull`, logo
-  // abaixo, então `setLang` precisa acontecer ANTES da análise — não na hora de renderizar.
-  setLang(opts.lang ?? "en");
-
   // Separação de credencial: `rpcUrl` é por onde falamos com a rede; `rede` é o rótulo que os
   // documentos, o DFD e o sumário do CLI mostram. Uma URL de RPC pode ser um segredo; um
   // rótulo nunca é. Quando o `-n` foi uma URL, o rótulo vem de UMA chamada `getNetwork`;
@@ -164,7 +142,6 @@ export async function buildContext(opts: {
     contractId: alvo.contractId,
     network: rede,
     generatedAt: opts.generatedAt,
-    lang: opts.lang,
     spec: {
       contractId: alvo.contractId, network: rede,
       // Sem isto o hash que `resolveTarget` acabou de ler on-chain ficava no caminho e o

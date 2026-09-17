@@ -44,7 +44,6 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { endpointDe, redactUrl } from "./spec.ts";
-import { msgs } from "./i18n.ts";
 import type { ErrEnum } from "./model.ts";
 import type { Finding } from "./detect.ts";
 
@@ -70,38 +69,21 @@ export type ProbeResult = {
   ledger?: number;
 };
 
-const M = msgs({
-  en: {
-    jaInicializado: (code: number, enumName: string, caseName: string) =>
-      `simulation reverted with Error(Contract, #${code}) = \`${enumName}::${caseName}\`, an already-initialized guard: the one-shot initializer has already fired on this instance`,
-    revertidoOutro: (erro: string) =>
-      `simulation reverted, but not with an already-initialized error (${erro}) — the placeholder arguments may have failed validation before reaching the guard, so this neither confirms nor denies the guard`,
-    revertidoSemCodigo: (erro: string) =>
-      `simulation reverted with a host error carrying no contract error code (${erro}) — inconclusive about the guard`,
-    sucesso: (fn: string) =>
-      `the simulation of \`${fn}\` SUCCEEDED with placeholder arguments from a throwaway account: the initializer can be executed right now by any address`,
-    tipoNaoSuportado: (tipo: string, param: string) =>
-      `argument \`${param}\` has spec type \`${tipo}\`, which this prober cannot build a placeholder for; no simulation was attempted`,
-    erroRpc: (e: string) => `probe did not complete: ${e}`,
-    timeout: (s: number) => `probe timed out after ${s} s`,
-    semPrazo: "probe skipped: the run's global timeout was already spent",
-  },
-  pt: {
-    jaInicializado: (code: number, enumName: string, caseName: string) =>
-      `a simulação reverteu com Error(Contract, #${code}) = \`${enumName}::${caseName}\`, uma guarda de "já inicializado": o inicializador de um tiro já disparou nesta instância`,
-    revertidoOutro: (erro: string) =>
-      `a simulação reverteu, mas não com erro de "já inicializado" (${erro}) — os argumentos placeholder podem ter falhado na validação antes de chegar à guarda, então isto não confirma nem nega a guarda`,
-    revertidoSemCodigo: (erro: string) =>
-      `a simulação reverteu com erro de host sem código de erro de contrato (${erro}) — inconclusivo sobre a guarda`,
-    sucesso: (fn: string) =>
-      `a simulação de \`${fn}\` TEVE SUCESSO com argumentos placeholder a partir de uma conta descartável: o inicializador pode ser executado agora por qualquer endereço`,
-    tipoNaoSuportado: (tipo: string, param: string) =>
-      `o argumento \`${param}\` tem tipo de spec \`${tipo}\`, para o qual esta sonda não sabe construir placeholder; nenhuma simulação foi tentada`,
-    erroRpc: (e: string) => `a sondagem não completou: ${e}`,
-    timeout: (s: number) => `a sondagem estourou o prazo de ${s} s`,
-    semPrazo: "sondagem pulada: o prazo global da execução já estava esgotado",
-  },
-});
+const M = {
+  jaInicializado: (code: number, enumName: string, caseName: string) =>
+    `simulation reverted with Error(Contract, #${code}) = \`${enumName}::${caseName}\`, an already-initialized guard: the one-shot initializer has already fired on this instance`,
+  revertidoOutro: (erro: string) =>
+    `simulation reverted, but not with an already-initialized error (${erro}) — the placeholder arguments may have failed validation before reaching the guard, so this neither confirms nor denies the guard`,
+  revertidoSemCodigo: (erro: string) =>
+    `simulation reverted with a host error carrying no contract error code (${erro}) — inconclusive about the guard`,
+  sucesso: (fn: string) =>
+    `the simulation of \`${fn}\` SUCCEEDED with placeholder arguments from a throwaway account: the initializer can be executed right now by any address`,
+  tipoNaoSuportado: (tipo: string, param: string) =>
+    `argument \`${param}\` has spec type \`${tipo}\`, which this prober cannot build a placeholder for; no simulation was attempted`,
+  erroRpc: (e: string) => `probe did not complete: ${e}`,
+  timeout: (s: number) => `probe timed out after ${s} s`,
+  semPrazo: "probe skipped: the run's global timeout was already spent",
+};
 
 /**
  * Nome do caso de erro que significa "já inicializado". É reconhecimento de NOME, e o nome

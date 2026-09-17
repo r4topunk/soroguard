@@ -29,9 +29,9 @@ Description of the protocol, the value it custodies and its operational context:
 
 > A stale address is the most common cause of a monitor that silently stops working. The addresses above hold for the binary identified in the header; re-check after any upgrade.
 
-window of 120661 ledgers (~186 h) — limited by RPC retention.
+window of 120661 ledgers (~185 h) — limited by RPC retention.
 
-**Observed activity (B)** — window of 120661 ledgers (~186 h, ledgers 64346934–64467594): no event of any topic. Absence of traffic is not a traffic profile.
+**Observed activity (B)** — window of 120661 ledgers (~185 h, ledgers 64347474–64468134): no event of any topic. Absence of traffic is not a traffic profile.
 
 ## What could go wrong?
 
@@ -110,14 +110,14 @@ Owner and channel do not appear in the binary: 2 rows await that information, an
 
 | Checklist question | Status | Detail |
 |---|---|---|
-| Does every threat in the threat model have a monitor, or a documented reason it cannot be monitored? | ⚠ gap | 2/3 threats with a monitor; no monitor and no justification: Spoof.1; 5 of 13 invocable entrypoints do not reach contract_event (`__*` reserved exports excluded, CAP-0058) — for those, monitoring through getEvents is impossible. |
+| Does every threat in the threat model have a monitor, or a documented reason it cannot be monitored? | ⚠ gap | 2/3 threats with a monitor; no monitor and no named substitute control: Spoof.1; 5 of 13 invocable entrypoints do not reach contract_event (`__*` reserved exports excluded, CAP-0058) — for those, monitoring through getEvents is impossible. |
 | Does every monitor trace back to an existing threat, with an ID derived from it? | ✔ ok | 2 monitors, all anchored to a threat in the document. |
-| Is the baseline grounded in observation, not guesswork? | ⚠ gap | observed window: 120661 ledgers (~185.55h), 0 distinct topics; ⚠ gap: the window of 120661 ledgers was collected and holds no event of any topic — absence of traffic, not a traffic profile.; without a baseline: Repudiate.1.M.1; 0 baselines with the count checked against the window. |
+| Is the baseline grounded in observation, not guesswork? | ⚠ gap | observed window: 120661 ledgers (~185.47h), 0 distinct topics; ⚠ gap: the window of 120661 ledgers was collected and holds no event of any topic — absence of traffic, not a traffic profile.; without a baseline: Repudiate.1.M.1; 0 baselines with the count checked against the window. |
 | Does every monitor have a defined response? | ✔ ok | 2 monitors with a response. |
-| Does every monitor have a named owner? | ⚠ gap | 0/2 monitors with an owner in the document; without an owner: Repudiate.1.M.1, Elevation.1.M.1. There is a mention of someone responsible elsewhere in the document, but not per monitor. The tool does not have this information — it is neither in the bytecode nor on-chain, and the team has to fill it in before submitting. |
+| Does every monitor have a named owner? | ⚠ gap | 0/2 monitors with a named owner: the Monitor type has no owner field and the §5 column is a fill-in on every row. The information is neither in the bytecode nor on-chain, and the team provides it before submitting. |
 | Have the alerts been historically accurate? | n/a | No monitor is Active yet (2 in the plan, all `Tuning` or `Planned`); 0 carry an observed baseline that was checked against the window, but none has alert history. Accuracy is only answerable after the monitors run: there is no alert yet to be right or wrong about. |
 | Is the on-chain address inventory present and up to date? | ✔ ok | contract id CDZY62OKIPJAB4HH44BI6PPYO4NGFQV7INDJH4KU6V6RNNSLCTUX3SCS present in the document (network mainnet). Analysis run over wasm hash `f340242d143b42e273f628f44ccb907f55f5beb256f3de17de2c005fcdbc9783` on 2026-09-17; a different hash on the instance means this plan describes code that is no longer live. |
-| Are the external boundaries (contracts called) in the inventory? | ⚠ gap | 7 entrypoints reach call/try_call (__constructor, __check_auth, add_context_rule, remove_context_rule, add_policy, remove_policy … (+1)). The destination addresses are runtime arguments: they are not derivable from the bytecode and the tool does not invent them. The inventory has to be completed by hand, or the monitoring covers only half the flow. |
+| Are the external boundaries (contracts called) in the inventory? | ⚠ gap | 7 entrypoints reach call/try_call (__constructor, __check_auth, add_context_rule, remove_context_rule, add_policy, remove_policy … (+1)). The destination addresses are runtime arguments: not derivable from the bytecode, and the tool does not invent them. The inventory has to be completed by hand, or the monitoring covers only half the flow. |
 | Have off-chain threats been identified and declared out of on-chain scope? | ✔ ok | The document ties the off-chain boundary to what was left out of the on-chain analysis: Tamper, Info, DoS, Spoof.1. |
 | Does every monitor have a concrete observable signal and an executable trigger? | ⚠ gap | 1 monitor is neither executable through getEvents nor fully specified — the query cannot be built while the fill-in on the row is open (durability of the entry, address or hash): Repudiate.1.M.1; no monitor is event-based, so the topic check does not apply: the observables derived here are ledger entries and the transaction, read through getLedgerEntries and by inspecting it; 0 of 2 monitors turn into an RPC call with no manual translation (topic filter from the contract spec); the rest need getLedgerEntries or transaction introspection. |
 

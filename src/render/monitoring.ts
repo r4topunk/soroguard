@@ -3,10 +3,9 @@
  * (developers.stellar.org/docs/build/security-docs/monitoring/monitoring-template-builders):
  * seis seções, nesta ordem, com as colunas que o template pede.
  *
- * Os títulos das seções e os cabeçalhos de coluna do template ficam no inglês original nos
- * dois idiomas — são a interface do documento com o revisor do SCF, e traduzi-los quebraria
- * o reconhecimento do template. O corpo segue `lang()`: inglês por padrão, português por
- * `--lang pt`.
+ * Os títulos das seções e os cabeçalhos de coluna do template ficam no inglês original —
+ * são a interface do documento com o revisor do SCF, e traduzi-los quebraria o
+ * reconhecimento do template.
  *
  * O acoplamento por ID é o valor central: toda linha da seção 4 tem um `<ThreatID>.M.<n>` que
  * aparece na seção 2, e todo baseline ou vem de observação (nível B) ou declara a lacuna.
@@ -21,340 +20,184 @@
  */
 
 import type { ArtifactContext } from "../artifact.ts";
-import { tierLabels } from "../artifact.ts";
+import { tierLabel } from "../artifact.ts";
 import type { Finding } from "../detect.ts";
 import { deriveMonitors, toExecutable, threatsSemObservavel, monitorAttribution, monitorFilterArity, lacuna } from "../monitors.ts";
 import { validateMonitoringPlan } from "../validate.ts";
 import { requiresAuth, writesStorage, emitsEvent, callsOut } from "../analyze.ts";
 import { declaracaoDeJanela } from "../events.ts";
-import { lang, msgs, plural } from "../i18n.ts";
+import { plural } from "../text.ts";
 
-const M = msgs({
-  en: {
-    locale: "en-US",
-    colFuncao: "Function",
-    titulo: (id: string) => `# On-Chain Monitoring Plan — \`${id}\``,
-    cabecalho: (rede: string, data: string, hash?: string) =>
-      `**Network:** ${rede} · **Generated:** ${data} (UTC) · **Source:** deployed WASM${hash ? `, hash \`${hash}\`` : ""}`,
-    interno:
-      "> **Keep this document internal.** A filled-in monitoring plan is the map of what is and what is not being watched.",
-    /**
-     * A frase acima é do time para o time. Sem a de baixo, um leitor externo lê este arquivo
-     * como laudo revisado sobre um contrato de terceiros — que é o que ele não é: o alvo é
-     * bytecode público, ninguém do lado do contrato viu isto, e nada aqui foi confirmado
-     * como explorável.
-     */
-    naoRevisado:
-      "> This draft was generated from public mainnet bytecode by a tool and has not been reviewed by the contract's owners; it is not a vulnerability report.",
-    comoLer: "**How to read the evidence marks.** No claim here is worth more than the evidence behind it:",
-    colMarca: "Marker",
-    colSignificado: "Meaning",
-    colQuemConfere: "Who can check it",
-    confereA: "anyone, by re-running the analysis over the same binary",
-    confereB: "anyone, over RPC in the same window",
-    confereC: "human review only",
-    lacunaSignificado: "the tool does not have this data and does not invent it",
-    lacunaQuem: "whoever operates the protocol has to fill it in",
-    rascunho:
-      "This plan was derived automatically from the bytecode by soroguard. It is a defensible draft, not a deployment: no monitor is born with status `Active`.",
-    /* §1 */
-    resumo: (
-      id: string, rede: string, bytes: string, fns: number, evs: number,
-      eps: number, inv: number, mut: number, auth: number, emite: number, completo: boolean, contaCustom: boolean,
-    ) =>
-      `Contract \`${id}\` on ${rede}${bytes ? `, a ${bytes}-byte binary` : ""}. ` +
-      `The spec declares ${fns} ${plural(fns, "function", "functions")} and ${evs} ${plural(evs, "event", "events")}. ` +
-      `The bytecode analysis found ${eps} exported, ${inv} invocable (\`__*\` reserved exports excluded, CAP-0058); ` +
-      `of the ${inv} invocable ${plural(inv, "entrypoint", "entrypoints")}, ${mut} reach a storage write, ` +
-      `${auth} reach \`require_auth*\` and ${emite} reach \`contract_event\`. ` +
-      `Call graph ${completo
-        ? "complete — a negative claim here is a sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here)"
-        : "**incomplete** (`call_indirect` present) — the negative claims are downgraded"}.` +
-      (contaCustom
-        ? " This module exports `__check_auth`: it is a custom account, so authorization is implemented there instead of by a `require_auth` call in each entrypoint — read every negative about `require_auth*` with that in mind."
-        : ""),
-    objetoAnalisado: (caminho: string) =>
-      `**Analyzed object:** local file \`${caminho}\`. The addresses below come from the file name when it is a contract id; otherwise they come out marked as not derivable — a file path in an address cell is a filter that matches nothing.`,
-    descricaoProtocolo: (l: string) =>
-      `Description of the protocol, the value it custodies and its operational context: ${l} — none of that is in the binary.`,
-    linhaInstancia: "Contract instance",
-    instanciaFuncao: (hash: string) => `Executable ${hash}; target of every filter in this plan`,
-    linhaEntrypoint: (nome: string) => `Entrypoint \`${nome}\``,
-    assinaturaAusente: "not declared in the spec (export with no function entry)",
-    linhaExternos: "External contracts invoked",
-    externosFuncao: (eps: string, extra: string) =>
-      `The destination address of \`call\`/\`try_call\` is a runtime argument and is not in the bytecode. Reaching cross-call: ${eps}${extra}`,
-    avisoEndereco:
-      "> A stale address is the most common cause of a monitor that silently stops working. The addresses above hold for the binary identified in the header; re-check after any upgrade.",
-    /* §2 */
-    severityReminders: "### Severity reminders",
-    colSeverity: "Severity",
-    colMeaning: "Meaning",
-    sevCritical: "Direct, large-scale loss of funds or of control; requires an immediate response.",
-    sevHigh: "Serious impact on funds, users or availability; requires a fast response.",
-    sevMedium: "Limited or workaround-able impact; the response can be scheduled.",
-    sevLow: "Minor or informational; monitored for awareness.",
-    threatRegister: "### Threat register",
-    colThreatId: "Threat ID",
-    colThreat: "Threat (from threat model)",
-    colComponente: "Affected component",
-    rebaixada: " ⚠ evidence downgraded: `call_indirect` in the subgraph",
-    semAmeaca: "No threat derivable from this contract's bytecode.",
-    letrasSemAmeaca: (letras: string) => `**STRIDE letters with no derivable threat:** ${letras}.`,
-    explicacaoLacunas: (estruturais: string, demais: string) =>
-      "The template asks for at least one issue per letter. These are declared instead of filled in. " +
-      (estruturais
-        ? `${estruturais} depend on identity and on data exposure, which do not exist in a contract's bytecode — that is a limit of the tool, not of this binary. `
-        : "") +
-      (demais ? `For ${demais}, no detector found a signal in this binary — which does not prove absence. ` : "") +
-      "All of them require manual analysis of the off-chain flow; filling them with generic text would give an impression of coverage that does not exist.",
-    /* §1 — atividade observada (nível B) */
-    e: " and ",
-    janelaObservada: (n: number, h: string, de: number, ate: number) =>
-      `window of ${n} ${plural(n, "ledger", "ledgers")} (~${h} h, ledgers ${de}–${ate})`,
-    tituloObservado: (janela: string) => `**Observed activity (B)** — ${janela}:`,
-    colTopic: "Topic",
-    colOcorrencias: "Occurrences",
-    colTaxa: "Rate/h",
-    colDeclarado: "Declared in spec",
-    sim: "yes",
-    nao: "no",
-    observadoMais: (n: number) => `… (+${n} more ${plural(n, "topic", "topics")})`,
-    notaObservado: (naoDeclarados: number, total: number) =>
-      `${naoDeclarados} of the ${total} observed ${plural(total, "topic", "topics")} ${plural(naoDeclarados, "is", "are")} not declared in this contract's spec: undeclared topics come from the SDK's own events (token \`transfer\`/\`approve\`, TTL) or from contracts invoked underneath this one. ` +
-      "They are still usable as a monitor observable — what they do not carry is the segment count, which only the spec gives, so their filter goes by contractId with the topic triaged client-side.",
-    semObservado: (janela: string) => `**Observed activity (B)** — ${janela}: no event of any topic. Absence of traffic is not a traffic profile.`,
-    /* §3 */
-    colCenario: "Exploitation scenario",
-    colEfeito: "Observable on-chain effect(s)",
-    semEfeito: "**No observable on-chain effect derivable from this analysis** — see §5.",
-    notaSemObservavel:
-      "> Threats with no observable effect were neither dismissed nor handed a for-show monitor: they are in section 5, with the control they require off-chain.",
-    /* §4 */
-    semBaselineMarca: "⚠ no baseline",
-    intencao: (classe: string, componente: string, threat: string) =>
-      `Alert on ${classe} in ${componente}, tracing back to threat ${threat}.`,
-    intencaoSemAchado: (threat: string) => `Alert on threat ${threat}.`,
-    celulaBaselineEmbutido: (gatilho: string, marca: string) => `${gatilho} **Baseline: ${marca}**`,
-    celulaBaseline: (gatilho: string, marca: string, base: string) => `${gatilho} **Baseline ${marca}:** ${base}`,
-    semMonitorLinha: "No on-chain observable derivable for this contract's threats.",
-    emUmaLinha: "One line each:",
-    umaLinha: (id: string, threat: string, componente: string, observavel: string, endereco: string) =>
-      `- **${id}** — We address **${threat}** in **${componente}** by monitoring **${observavel}** at address **\`${endereco}\`**.`,
-    comoAtribuido:
-      "**How each observable was attributed to its threat.** The tier holds per claim: (A) is a bytecode fact, (C) is an inference that still needs human review.",
-    demaisMonitores: (l: string) => `- Remaining monitors: the attribution could not be recomputed from this context — ${l}.`,
-    filtrosExecutaveis: "### Executable filters",
-    semExecutaveis: (n: number, estranhos: number, l: string) =>
-      (n === 1 ? "The only monitor is not directly executable through \`getEvents\`. " : `None of the ${n} monitors is directly executable through \`getEvents\`. `) +
-      (estranhos
-        ? `${estranhos} of them were not derived from this context and therefore have no recomputable filter here — ${l}. `
-        : "That is not a flaw in the plan: the observables derived here are ledger entries and the authorization tree, which are read through " +
-          "`getLedgerEntries` and by inspecting the transaction. ") +
-      "A topic filter requires the contract to emit an event attributable to the threat.",
-    comExecutaveis: (n: number, total: number) =>
-      `${n} of ${total} ${plural(total, "monitor", "monitors")} ${plural(n, "turns", "turn")} into an RPC call with no manual translation. ` +
-      "The topics below come from `prefixTopics` in the contract spec recorded in the WASM itself. On the wire each segment goes as a " +
-      "base64 ScVal symbol (the raw string is rejected with `invalid parameters`) and the list must have the same length as the event's " +
-      "topic list — a filter that is too short does not error, it returns zero.",
-    /**
-     * O nº de `*` não é escolha do renderizador: é a contagem de parâmetros que o spec
-     * declara em TopicList. Sem dizer isso, um filtro sem `*` se lê como esquecimento —
-     * e errar o comprimento devolve zero em silêncio, o modo de falha mais caro do plano.
-     */
-    aridadeSpec: (nome: string, n: number) =>
-      `\`${nome}\` declares ${n} topic ${plural(n, "parameter", "parameters")} in the spec, so the filter ` +
-      (n === 0 ? "has no `*`" : `carries ${n} \`*\``) + ".",
-    /* §5 */
-    revisao: (data: string) => `never reviewed — generated on ${data}`,
-    colResposta: "Response / action",
-    colOwner: "Owner",
-    colStatus: "Status",
-    colRevisao: "Last reviewed",
-    canalEAcao: (resposta: string, l: string) => `${resposta} Channel and automated action: ${l}`,
-    statusValues:
-      "**Status values:** _Active_ (live, alerting), _Tuning_ (live, thresholds being adjusted), _Planned_ (agreed, not implemented yet).",
-    explicacaoStatus:
-      "No monitor leaves this document as `Active`: this is the plan, not the deployment. " +
-      "`Tuning` marks what is fully specified — topic attributed and baseline observed — and can be switched on as is. " +
-      "`Planned` marks what still depends on data the tool does not have.",
-    donoECanal: (n: number) =>
-      `Owner and channel do not appear in the binary: ${n} ${plural(n, "row awaits", "rows await")} that information, and section 6 counts it as a submission blocker.`,
-    tituloForaDaChain: "### Threats that require an off-chain control",
-    colPorQue: "Why there is no on-chain observable",
-    colControle: "Required control",
-    motivoSilenciosa:
-      "(A) the listed entrypoints reach `put_contract_data` and do not reach `contract_event`: by construction they produce nothing in the event stream. With no storage keys known for certain, not even the state diff is addressable.",
-    motivoGenerico: "No observable effect was derived for this class from the bytecode.",
-    controleSilenciosa:
-      "Periodic reconciliation between the state read from the contract and the state the backend expects; and, as a design fix, emit an event in the entrypoints listed in the finding.",
-    /* §6 */
-    colPergunta: "Checklist question",
-    colSituacao: "Status",
-    colDetalhe: "Detail",
-    ok: "✔ ok",
-    gap: "⚠ gap",
-    submetivel:
-      "**Ready to submit:** every monitor traces back to a threat, every baseline either comes from observation or declares the gap, and no field was filled with generic text.",
-    naoSubmeter: "**Do not submit without closing these points:**",
-    tituloInput: "### Input the team must provide before submitting",
-    documentoVivo:
-      "Treat this plan as a living document: review it whenever the contracts, the addresses or the threat model change.",
-  },
-  pt: {
-    locale: "pt-BR",
-    colFuncao: "Função",
-    titulo: (id: string) => `# On-Chain Monitoring Plan — \`${id}\``,
-    cabecalho: (rede: string, data: string, hash?: string) =>
-      `**Rede:** ${rede} · **Gerado em:** ${data} (UTC) · **Origem:** WASM deployado${hash ? `, hash \`${hash}\`` : ""}`,
-    interno:
-      "> **Mantenha este documento interno.** Um plano de monitoramento preenchido é o mapa do que é e do que não é vigiado.",
-    naoRevisado:
-      "> Este rascunho foi gerado a partir de bytecode público de mainnet por uma ferramenta e não foi revisado pelos donos do contrato; não é um relatório de vulnerabilidade.",
-    comoLer: "**Como ler as marcas de evidência.** Nenhuma afirmação aqui vale mais do que a evidência que a sustenta:",
-    colMarca: "Marca",
-    colSignificado: "Significado",
-    colQuemConfere: "Quem consegue conferir",
-    confereA: "qualquer um, rerodando a análise sobre o mesmo binário",
-    confereB: "qualquer um, via RPC na mesma janela",
-    confereC: "só revisão humana",
-    lacunaSignificado: "a ferramenta não tem esse dado e não o inventa",
-    lacunaQuem: "quem opera o protocolo precisa preencher",
-    rascunho:
-      "Este plano foi derivado automaticamente do bytecode por soroguard. Ele é um rascunho defensável, não uma implantação: nenhum monitor nasce com status `Active`.",
-    resumo: (
-      id: string, rede: string, bytes: string, fns: number, evs: number,
-      eps: number, inv: number, mut: number, auth: number, emite: number, completo: boolean, contaCustom: boolean,
-    ) =>
-      `Contrato \`${id}\` na rede ${rede}${bytes ? `, binário de ${bytes} bytes` : ""}. ` +
-      `O spec declara ${fns} ${plural(fns, "função", "funções")} e ${evs} ${plural(evs, "evento", "eventos")}. ` +
-      `A análise do bytecode encontrou ${eps} exportados, ${inv} invocáveis (exports reservados \`__*\` excluídos, CAP-0058); ` +
-      `dos ${inv} ${plural(inv, "entrypoint invocável", "entrypoints invocáveis")}, ${mut} alcançam escrita de storage, ` +
-      `${auth} alcançam \`require_auth*\` e ${emite} alcançam \`contract_event\`. ` +
-      `Call graph ${completo
-        ? "completo — a afirmação negativa aqui é negativa sólida para o call graph DESTE módulo (autorização feita num contrato chamado ou em `__check_auth` não é visível daqui)"
-        : "**incompleto** (`call_indirect` presente) — as afirmações negativas vão rebaixadas"}.` +
-      (contaCustom
-        ? " Este módulo exporta `__check_auth`: é uma conta customizada, então a autorização é implementada ali e não por uma chamada de `require_auth` em cada entrypoint — leia cada negativa sobre `require_auth*` com isso em mente."
-        : ""),
-    objetoAnalisado: (caminho: string) =>
-      `**Objeto analisado:** arquivo local \`${caminho}\`. Os endereços abaixo vêm do nome do arquivo quando ele é um contract id; caso contrário saem marcados como não deriváveis — um caminho de arquivo numa célula de endereço é um filtro que não casa com nada.`,
-    descricaoProtocolo: (l: string) =>
-      `Descrição do protocolo, do valor sob custódia e do seu contexto operacional: ${l} — nada disso está no binário.`,
-    linhaInstancia: "Instância do contrato",
-    instanciaFuncao: (hash: string) => `Executável ${hash}; alvo de todos os filtros deste plano`,
-    linhaEntrypoint: (nome: string) => `Entrypoint \`${nome}\``,
-    assinaturaAusente: "não declarada no spec (export sem entrada de função)",
-    linhaExternos: "Contratos externos invocados",
-    externosFuncao: (eps: string, extra: string) =>
-      `O endereço de destino de \`call\`/\`try_call\` é argumento em runtime e não está no bytecode. Alcançam cross-call: ${eps}${extra}`,
-    avisoEndereco:
-      "> Endereço desatualizado é a causa mais comum de monitor que para de funcionar em silêncio. Os endereços acima valem para o binário identificado no cabeçalho; reconferir após qualquer upgrade.",
-    severityReminders: "### Severity reminders",
-    colSeverity: "Severity",
-    colMeaning: "Meaning",
-    sevCritical: "Perda direta e em larga escala de fundos ou de controle; exige resposta imediata.",
-    sevHigh: "Impacto sério a fundos, usuários ou disponibilidade; exige resposta rápida.",
-    sevMedium: "Impacto limitado ou contornável; a resposta pode ser agendada.",
-    sevLow: "Menor ou informativo; monitorado para ciência.",
-    threatRegister: "### Threat register",
-    colThreatId: "Threat ID",
-    colThreat: "Threat (from threat model)",
-    colComponente: "Affected component",
-    rebaixada: " ⚠ evidência rebaixada: `call_indirect` no subgrafo",
-    semAmeaca: "Nenhuma ameaça derivável do bytecode deste contrato.",
-    letrasSemAmeaca: (letras: string) => `**Letras do STRIDE sem ameaça derivável:** ${letras}.`,
-    explicacaoLacunas: (estruturais: string, demais: string) =>
-      "O template pede ao menos uma issue por letra. Estas ficam declaradas em vez de preenchidas. " +
-      (estruturais
-        ? `${estruturais} dependem de identidade e de exposição de dados, que não existem no bytecode de um contrato — é limite da ferramenta, não deste binário. `
-        : "") +
-      (demais ? `Para ${demais}, nenhum detector encontrou sinal neste binário — o que não prova ausência. ` : "") +
-      "Todas exigem análise manual do fluxo off-chain; preencher com genérico daria impressão de cobertura que não existe.",
-    e: " e ",
-    janelaObservada: (n: number, h: string, de: number, ate: number) =>
-      `janela de ${n} ${plural(n, "ledger", "ledgers")} (~${h} h, ledgers ${de}–${ate})`,
-    tituloObservado: (janela: string) => `**Atividade observada (B)** — ${janela}:`,
-    colTopic: "Topic",
-    colOcorrencias: "Ocorrências",
-    colTaxa: "Taxa/h",
-    colDeclarado: "Declarado no spec",
-    sim: "sim",
-    nao: "não",
-    observadoMais: (n: number) => `… (+${n} ${plural(n, "topic", "topics")})`,
-    notaObservado: (naoDeclarados: number, total: number) =>
-      `${naoDeclarados} ${plural(total, `do ${total} topic observado`, `dos ${total} topics observados`)} não ${plural(naoDeclarados, "está declarado", "estão declarados")} no spec deste contrato: topic não declarado vem dos eventos do próprio SDK (token \`transfer\`/\`approve\`, TTL) ou de contratos invocados por baixo deste. ` +
-      "Continuam utilizáveis como observável de monitor — o que eles não carregam é o número de segmentos, que só o spec dá, então o filtro deles vai por contractId com a triagem do topic no cliente.",
-    semObservado: (janela: string) => `**Atividade observada (B)** — ${janela}: nenhum evento de nenhum topic. Ausência de tráfego não é perfil de tráfego.`,
-    colCenario: "Exploitation scenario",
-    colEfeito: "Observable on-chain effect(s)",
-    semEfeito: "**Nenhum efeito observável on-chain derivável desta análise** — ver §5.",
-    notaSemObservavel:
-      "> Ameaças sem efeito observável não foram descartadas nem receberam monitor de fachada: estão na seção 5, com o controle que exigem fora da chain.",
-    semBaselineMarca: "⚠ sem baseline",
-    intencao: (classe: string, componente: string, threat: string) =>
-      `Alertar sobre ${classe} em ${componente}, rastreando a ameaça ${threat}.`,
-    intencaoSemAchado: (threat: string) => `Alertar sobre a ameaça ${threat}.`,
-    celulaBaselineEmbutido: (gatilho: string, marca: string) => `${gatilho} **Baseline: ${marca}**`,
-    celulaBaseline: (gatilho: string, marca: string, base: string) => `${gatilho} **Baseline ${marca}:** ${base}`,
-    semMonitorLinha: "Nenhum observável on-chain derivável para as ameaças deste contrato.",
-    emUmaLinha: "Em uma linha cada:",
-    umaLinha: (id: string, threat: string, componente: string, observavel: string, endereco: string) =>
-      `- **${id}** — Endereçamos **${threat}** em **${componente}** monitorando **${observavel}** no endereço **\`${endereco}\`**.`,
-    comoAtribuido:
-      "**Como cada observável foi atribuído à ameaça.** O nível vale por afirmação: (A) é fato de bytecode, (C) é inferência que ainda precisa de revisão humana.",
-    demaisMonitores: (l: string) => `- Demais monitores: a atribuição não pôde ser recomputada a partir deste contexto — ${l}.`,
-    filtrosExecutaveis: "### Filtros executáveis",
-    semExecutaveis: (n: number, estranhos: number, l: string) =>
-      (n === 1 ? "O único monitor não é executável diretamente por \`getEvents\`. " : `Nenhum dos ${n} monitores é executável diretamente por \`getEvents\`. `) +
-      (estranhos
-        ? `${estranhos} deles não foram derivados deste contexto e por isso não têm filtro recomputável aqui — ${l}. `
-        : "Isso não é falha do plano: os observáveis derivados aqui são ledger entries e árvore de autorização, que se leem por " +
-          "`getLedgerEntries` e por inspeção da transação. ") +
-      "O filtro de tópicos exige que o contrato emita evento atribuível à ameaça.",
-    comExecutaveis: (n: number, total: number) =>
-      `${n} de ${total} ${plural(total, "monitor vira", "monitores viram")} chamada de RPC sem tradução manual. ` +
-      "Os tópicos abaixo saem de `prefixTopics` no contract spec gravado no próprio WASM. No transporte cada segmento vai como " +
-      "ScVal símbolo em base64 (a string crua é recusada com `invalid parameters`) e a lista precisa ter o mesmo comprimento da lista " +
-      "de tópicos do evento — filtro curto demais não dá erro, devolve zero.",
-    aridadeSpec: (nome: string, n: number) =>
-      `\`${nome}\` declara ${n} ${plural(n, "parâmetro", "parâmetros")} de tópico no spec, então o filtro ` +
-      (n === 0 ? "não tem `*`" : `carrega ${n} \`*\``) + ".",
-    revisao: (data: string) => `nunca revisado — gerado em ${data}`,
-    colResposta: "Response / action",
-    colOwner: "Owner",
-    colStatus: "Status",
-    colRevisao: "Last reviewed",
-    canalEAcao: (resposta: string, l: string) => `${resposta} Canal e ação automatizada: ${l}`,
-    statusValues:
-      "**Status values:** _Active_ (no ar, alertando), _Tuning_ (no ar, limiares em ajuste), _Planned_ (acordado, ainda não implementado).",
-    explicacaoStatus:
-      "Nenhum monitor sai daqui como `Active`: este documento é o plano, não a implantação. " +
-      "`Tuning` marca o que está completamente especificado — tópico atribuído e baseline observado — e pode ser ligado como está. " +
-      "`Planned` marca o que ainda depende de um dado que a ferramenta não tem.",
-    donoECanal: (n: number) =>
-      `Dono e canal não aparecem no binário: ${n} ${plural(n, "linha aguarda", "linhas aguardam")} essa informação, e a seção 6 a conta como bloqueio de submissão.`,
-    tituloForaDaChain: "### Ameaças que exigem controle fora da chain",
-    colPorQue: "Por que não há observável on-chain",
-    colControle: "Controle exigido",
-    motivoSilenciosa:
-      "(A) os entrypoints listados alcançam `put_contract_data` e não alcançam `contract_event`: por construção não produzem nada no stream de eventos. Sem chaves de storage conhecidas com certeza, nem o diff de estado é endereçável.",
-    motivoGenerico: "Nenhum efeito observável foi derivado desta classe a partir do bytecode.",
-    controleSilenciosa:
-      "Reconciliação periódica entre o estado lido do contrato e o estado esperado pelo backend; e, como correção de desenho, emitir evento nos entrypoints listados no achado.",
-    colPergunta: "Pergunta do checklist",
-    colSituacao: "Situação",
-    colDetalhe: "Detalhe",
-    ok: "✔ ok",
-    gap: "⚠ lacuna",
-    submetivel:
-      "**Pronto para submissão:** todo monitor rastreia até uma ameaça, todo baseline vem de observação ou declara a lacuna, e nenhum campo foi preenchido com genérico.",
-    naoSubmeter: "**Não submeter sem fechar estes pontos:**",
-    tituloInput: "### Input the team must provide before submitting",
-    documentoVivo:
-      "Trate este plano como documento vivo: revise sempre que os contratos, os endereços ou o threat model mudarem.",
-  },
-});
+const M = {
+  colFuncao: "Function",
+  titulo: (id: string) => `# On-Chain Monitoring Plan — \`${id}\``,
+  cabecalho: (rede: string, data: string, hash?: string) =>
+    `**Network:** ${rede} · **Generated:** ${data} (UTC) · **Source:** deployed WASM${hash ? `, hash \`${hash}\`` : ""}`,
+  interno:
+    "> **Keep this document internal.** A filled-in monitoring plan is the map of what is and what is not being watched.",
+  /**
+   * A frase acima é do time para o time. Sem a de baixo, um leitor externo lê este arquivo
+   * como laudo revisado sobre um contrato de terceiros — que é o que ele não é: o alvo é
+   * bytecode público, ninguém do lado do contrato viu isto, e nada aqui foi confirmado
+   * como explorável.
+   */
+  naoRevisado:
+    "> This draft was generated from public mainnet bytecode by a tool and has not been reviewed by the contract's owners; it is not a vulnerability report.",
+  comoLer: "**How to read the evidence marks.** No claim here is worth more than the evidence behind it:",
+  colMarca: "Marker",
+  colSignificado: "Meaning",
+  colQuemConfere: "Who can check it",
+  confereA: "anyone, by re-running the analysis over the same binary",
+  confereB: "anyone, over RPC in the same window",
+  confereC: "human review only",
+  lacunaSignificado: "the tool does not have this data and does not invent it",
+  lacunaQuem: "whoever operates the protocol has to fill it in",
+  rascunho:
+    "This plan was derived automatically from the bytecode by soroguard. It is a defensible draft, not a deployment: no monitor is born with status `Active`.",
+  /* §1 */
+  resumo: (
+    id: string, rede: string, bytes: string, fns: number, evs: number,
+    eps: number, inv: number, mut: number, auth: number, emite: number, completo: boolean, contaCustom: boolean,
+  ) =>
+    `Contract \`${id}\` on ${rede}${bytes ? `, a ${bytes}-byte binary` : ""}. ` +
+    `The spec declares ${fns} ${plural(fns, "function", "functions")} and ${evs} ${plural(evs, "event", "events")}. ` +
+    `The bytecode analysis found ${eps} exported, ${inv} invocable (\`__*\` reserved exports excluded, CAP-0058); ` +
+    `of the ${inv} invocable ${plural(inv, "entrypoint", "entrypoints")}, ${mut} reach a storage write, ` +
+    `${auth} reach \`require_auth*\` and ${emite} reach \`contract_event\`. ` +
+    `Call graph ${completo
+      ? "complete — a negative claim here is a sound negative for this module's call graph (authorization enforced in a called contract or in `__check_auth` is not visible here)"
+      : "**incomplete** (`call_indirect` present) — the negative claims are downgraded"}.` +
+    (contaCustom
+      ? " This module exports `__check_auth`: it is a custom account, so authorization is implemented there instead of by a `require_auth` call in each entrypoint — read every negative about `require_auth*` with that in mind."
+      : ""),
+  objetoAnalisado: (caminho: string) =>
+    `**Analyzed object:** local file \`${caminho}\`. The addresses below come from the file name when it is a contract id; otherwise they come out marked as not derivable — a file path in an address cell is a filter that matches nothing.`,
+  descricaoProtocolo: (l: string) =>
+    `Description of the protocol, the value it custodies and its operational context: ${l} — none of that is in the binary.`,
+  linhaInstancia: "Contract instance",
+  instanciaFuncao: (hash: string) => `Executable ${hash}; target of every filter in this plan`,
+  linhaEntrypoint: (nome: string) => `Entrypoint \`${nome}\``,
+  assinaturaAusente: "not declared in the spec (export with no function entry)",
+  linhaExternos: "External contracts invoked",
+  externosFuncao: (eps: string, extra: string) =>
+    `The destination address of \`call\`/\`try_call\` is a runtime argument and is not in the bytecode. Reaching cross-call: ${eps}${extra}`,
+  avisoEndereco:
+    "> A stale address is the most common cause of a monitor that silently stops working. The addresses above hold for the binary identified in the header; re-check after any upgrade.",
+  /* §2 */
+  severityReminders: "### Severity reminders",
+  colSeverity: "Severity",
+  colMeaning: "Meaning",
+  sevCritical: "Direct, large-scale loss of funds or of control; requires an immediate response.",
+  sevHigh: "Serious impact on funds, users or availability; requires a fast response.",
+  sevMedium: "Limited or workaround-able impact; the response can be scheduled.",
+  sevLow: "Minor or informational; monitored for awareness.",
+  threatRegister: "### Threat register",
+  colThreatId: "Threat ID",
+  colThreat: "Threat (from threat model)",
+  colComponente: "Affected component",
+  rebaixada: " ⚠ evidence downgraded: `call_indirect` in the subgraph",
+  semAmeaca: "No threat derivable from this contract's bytecode.",
+  letrasSemAmeaca: (letras: string) => `**STRIDE letters with no derivable threat:** ${letras}.`,
+  explicacaoLacunas: (estruturais: string, demais: string) =>
+    "The template asks for at least one issue per letter. These are declared instead of filled in. " +
+    (estruturais
+      ? `${estruturais} depend on identity and on data exposure, which do not exist in a contract's bytecode — that is a limit of the tool, not of this binary. `
+      : "") +
+    (demais ? `For ${demais}, no detector found a signal in this binary — which does not prove absence. ` : "") +
+    "All of them require manual analysis of the off-chain flow; filling them with generic text would give an impression of coverage that does not exist.",
+  /* §1 — atividade observada (nível B) */
+  e: " and ",
+  janelaObservada: (n: number, h: string, de: number, ate: number) =>
+    `window of ${n} ${plural(n, "ledger", "ledgers")} (~${h} h, ledgers ${de}–${ate})`,
+  tituloObservado: (janela: string) => `**Observed activity (B)** — ${janela}:`,
+  colTopic: "Topic",
+  colOcorrencias: "Occurrences",
+  colTaxa: "Rate/h",
+  colDeclarado: "Declared in spec",
+  sim: "yes",
+  nao: "no",
+  observadoMais: (n: number) => `… (+${n} more ${plural(n, "topic", "topics")})`,
+  notaObservado: (naoDeclarados: number, total: number) =>
+    `${naoDeclarados} of the ${total} observed ${plural(total, "topic", "topics")} ${plural(naoDeclarados, "is", "are")} not declared in this contract's spec: undeclared topics come from the SDK's own events (token \`transfer\`/\`approve\`, TTL) or from contracts invoked underneath this one. ` +
+    "They are still usable as a monitor observable — what they do not carry is the segment count, which only the spec gives, so their filter goes by contractId with the topic triaged client-side.",
+  semObservado: (janela: string) => `**Observed activity (B)** — ${janela}: no event of any topic. Absence of traffic is not a traffic profile.`,
+  /* §3 */
+  colCenario: "Exploitation scenario",
+  colEfeito: "Observable on-chain effect(s)",
+  semEfeito: "**No observable on-chain effect derivable from this analysis** — see §5.",
+  notaSemObservavel:
+    "> Threats with no observable effect were neither dismissed nor handed a for-show monitor: they are in section 5, with the control they require off-chain.",
+  /* §4 */
+  semBaselineMarca: "⚠ no baseline",
+  intencao: (classe: string, componente: string, threat: string) =>
+    `Alert on ${classe} in ${componente}, tracing back to threat ${threat}.`,
+  intencaoSemAchado: (threat: string) => `Alert on threat ${threat}.`,
+  celulaBaselineEmbutido: (gatilho: string, marca: string) => `${gatilho} **Baseline: ${marca}**`,
+  celulaBaseline: (gatilho: string, marca: string, base: string) => `${gatilho} **Baseline ${marca}:** ${base}`,
+  semMonitorLinha: "No on-chain observable derivable for this contract's threats.",
+  emUmaLinha: "One line each:",
+  umaLinha: (id: string, threat: string, componente: string, observavel: string, endereco: string) =>
+    `- **${id}** — We address **${threat}** in **${componente}** by monitoring **${observavel}** at address **\`${endereco}\`**.`,
+  comoAtribuido:
+    "**How each observable was attributed to its threat.** The tier holds per claim: (A) is a bytecode fact, (C) is an inference that still needs human review.",
+  demaisMonitores: (l: string) => `- Remaining monitors: the attribution could not be recomputed from this context — ${l}.`,
+  filtrosExecutaveis: "### Executable filters",
+  semExecutaveis: (n: number, estranhos: number, l: string) =>
+    (n === 1 ? "The only monitor is not directly executable through \`getEvents\`. " : `None of the ${n} monitors is directly executable through \`getEvents\`. `) +
+    (estranhos
+      ? `${estranhos} of them were not derived from this context and therefore have no recomputable filter here — ${l}. `
+      : "That is not a flaw in the plan: the observables derived here are ledger entries and the authorization tree, which are read through " +
+        "`getLedgerEntries` and by inspecting the transaction. ") +
+    "A topic filter requires the contract to emit an event attributable to the threat.",
+  comExecutaveis: (n: number, total: number) =>
+    `${n} of ${total} ${plural(total, "monitor", "monitors")} ${plural(n, "turns", "turn")} into an RPC call with no manual translation. ` +
+    "The topics below come from `prefixTopics` in the contract spec recorded in the WASM itself. On the wire each segment goes as a " +
+    "base64 ScVal symbol (the raw string is rejected with `invalid parameters`) and the list must have the same length as the event's " +
+    "topic list — a filter that is too short does not error, it returns zero.",
+  /**
+   * O nº de `*` não é escolha do renderizador: é a contagem de parâmetros que o spec
+   * declara em TopicList. Sem dizer isso, um filtro sem `*` se lê como esquecimento —
+   * e errar o comprimento devolve zero em silêncio, o modo de falha mais caro do plano.
+   */
+  aridadeSpec: (nome: string, n: number) =>
+    `\`${nome}\` declares ${n} topic ${plural(n, "parameter", "parameters")} in the spec, so the filter ` +
+    (n === 0 ? "has no `*`" : `carries ${n} \`*\``) + ".",
+  /* §5 */
+  revisao: (data: string) => `never reviewed — generated on ${data}`,
+  colResposta: "Response / action",
+  colOwner: "Owner",
+  colStatus: "Status",
+  colRevisao: "Last reviewed",
+  canalEAcao: (resposta: string, l: string) => `${resposta} Channel and automated action: ${l}`,
+  statusValues:
+    "**Status values:** _Active_ (live, alerting), _Tuning_ (live, thresholds being adjusted), _Planned_ (agreed, not implemented yet).",
+  explicacaoStatus:
+    "No monitor leaves this document as `Active`: this is the plan, not the deployment. " +
+    "`Tuning` marks what is fully specified — topic attributed and baseline observed — and can be switched on as is. " +
+    "`Planned` marks what still depends on data the tool does not have.",
+  donoECanal: (n: number) =>
+    `Owner and channel do not appear in the binary: ${n} ${plural(n, "row awaits", "rows await")} that information, and section 6 counts it as a submission blocker.`,
+  tituloForaDaChain: "### Threats that require an off-chain control",
+  colPorQue: "Why there is no on-chain observable",
+  colControle: "Required control",
+  motivoSilenciosa:
+    "(A) the listed entrypoints reach `put_contract_data` and do not reach `contract_event`: by construction they produce nothing in the event stream. With no storage keys known for certain, not even the state diff is addressable.",
+  motivoGenerico: "No observable effect was derived for this class from the bytecode.",
+  controleSilenciosa:
+    "Periodic reconciliation between the state read from the contract and the state the backend expects; and, as a design fix, emit an event in the entrypoints listed in the finding.",
+  /* §6 */
+  colPergunta: "Checklist question",
+  colSituacao: "Status",
+  colDetalhe: "Detail",
+  ok: "✔ ok",
+  gap: "⚠ gap",
+  submetivel:
+    "**Ready to submit:** every monitor traces back to a threat, every baseline either comes from observation or declares the gap, and no field was filled with generic text.",
+  naoSubmeter: "**Do not submit without closing these points:**",
+  tituloInput: "### Input the team must provide before submitting",
+  documentoVivo:
+    "Treat this plan as a living document: review it whenever the contracts, the addresses or the threat model change.",
+};
 
 /**
  * Junção de lista em prosa: "Tamper", "Tamper and DoS", "Tamper, DoS and Repudiate".
@@ -371,7 +214,7 @@ const linha = (...cols: string[]): string => `| ${cols.map(cel).join(" | ")} |`;
 
 /** Componente afetado: achados de escopo de contrato não têm entrypoint. */
 const componente = (f: Finding, ctx: ArtifactContext): string =>
-  f.entrypoint === "<contrato>" ? `${lang() === "pt" ? "Contrato inteiro" : "Whole contract"} (${ctx.contractId})` : `\`${f.entrypoint}\``;
+  f.entrypoint === "<contrato>" ? `Whole contract (${ctx.contractId})` : `\`${f.entrypoint}\``;
 
 /** Só as inferências do achado — é o que a coluna "cenário de exploração" pede. */
 const cenario = (f: Finding): string =>
@@ -384,7 +227,7 @@ export function renderMonitoringPlan(ctx: ArtifactContext): string {
   for (const m of monitors) porAmeaca.set(m.threatId, [...(porAmeaca.get(m.threatId) ?? []), m]);
   const achadoPorId = new Map(ctx.findings.filter((f) => f.id).map((f) => [f.id!, f]));
   const L = lacuna();
-  const tier = tierLabels[lang()];
+  const tier = tierLabel;
 
   const o: string[] = [];
   const p = (s = "") => o.push(s);
@@ -422,7 +265,7 @@ export function renderMonitoringPlan(ctx: ArtifactContext): string {
     M.resumo(
       ctx.contractId,
       ctx.network,
-      ctx.spec.wasmBytes ? ctx.spec.wasmBytes.toLocaleString(M.locale) : "",
+      ctx.spec.wasmBytes ? ctx.spec.wasmBytes.toLocaleString("en-US") : "",
       ctx.spec.fns.length,
       ctx.spec.events.length,
       eps.length,
@@ -494,7 +337,7 @@ export function renderMonitoringPlan(ctx: ArtifactContext): string {
       for (const e of vistos.slice(0, 12)) {
         p(linha(
           `\`${e.topic}\``,
-          e.count.toLocaleString(M.locale),
+          e.count.toLocaleString("en-US"),
           e.ratePerHour >= 10 ? e.ratePerHour.toFixed(0) : e.ratePerHour.toFixed(2),
           declarados.has(e.topic) ? M.sim : M.nao,
         ));

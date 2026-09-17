@@ -5,7 +5,6 @@
 import type { ModuleAnalysis, Entrypoint } from "./analyze.ts";
 import type { Finding, Stride, Tier } from "./detect.ts";
 import type { ContractModel } from "./model.ts";
-import type { Lang } from "./i18n.ts";
 
 /** Nível B — fato observado on-chain. Única origem legítima de baseline. */
 export type ObservedEvent = {
@@ -102,8 +101,6 @@ export type ArtifactContext = {
   observationError?: string;
   /** true quando a coleta de nível B foi pulada de propósito (`--offline` ou alvo .wasm) */
   offline?: boolean;
-  /** idioma da saída; padrão `en`. Os renderizadores chamam `setLang(ctx.lang)`. */
-  lang?: Lang;
   /** chaves de storage inferidas, quando disponíveis */
   storageKeys?: { key: string; confidence: "certain" | "likely" }[];
   dfd?: Dfd;
@@ -143,13 +140,12 @@ export type ValidationReport = {
 
 /* ---------- helpers compartilhados ---------- */
 
-/** Rótulo de nível de evidência, como aparece nos documentos (por idioma; ver i18n.ts). */
-export const tierLabels: Record<Lang, Record<Tier, string>> = {
-  en: { A: "bytecode fact", B: "fact observed on-chain", C: "inference — requires human review" },
-  pt: { A: "fato de bytecode", B: "fato observado on-chain", C: "inferência — requer revisão humana" },
+/** Rótulo de nível de evidência, como aparece nos documentos. */
+export const tierLabel: Record<Tier, string> = {
+  A: "bytecode fact",
+  B: "fact observed on-chain",
+  C: "inference — requires human review",
 };
-/** @deprecated use `tierLabels[lang()]`. Mantido enquanto os renderizadores migram. */
-export const tierLabel: Record<Tier, string> = tierLabels.pt;
 
 export const isMutating = (ep: Entrypoint, an: ModuleAnalysis): boolean =>
   an.writeBeforeAuth.has(ep.name) || ep.reaches.has("put_contract_data") || ep.reaches.has("del_contract_data");

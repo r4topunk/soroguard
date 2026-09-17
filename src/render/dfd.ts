@@ -21,177 +21,98 @@ import type { Entrypoint } from "../analyze.ts";
 import { emitsEvent, readsStorage, writesStorage, canUpgradeSelf } from "../analyze.ts";
 import { fronteiras } from "../detect.ts";
 import { AUTH_FNS, CROSS_CALL_FNS, EVENT_FNS, STORAGE_READ_FNS, STORAGE_WRITE_FNS, UPGRADE_FNS } from "../hostfns.ts";
-import { msgs } from "../i18n.ts";
 
 /* ------------------------------------------------------------------ *
- * Texto de saída, por idioma. `pt` é o texto que o diagrama já emitia;
- * `en` é o padrão. Ids de nó (`p_`, `s_`, `e_`, `x_`, `tb_`) e o marcador
- * `†` são language-neutral de propósito: outros módulos casam com eles.
+ * Texto de saída. Ids de nó (`p_`, `s_`, `e_`, `x_`, `tb_`) e o marcador
+ * `†` são estáveis de propósito: outros módulos casam com eles.
  * ------------------------------------------------------------------ */
 
-const M = msgs({
-  en: {
-    /* marcadores de alcance no rótulo do processo */
-    marcaAuth: "require_auth",
-    marcaLeitura: "read",
-    marcaEscrita: "write",
-    marcaEvento: "event",
-    marcaCrossCall: "cross-call",
-    marcaUpgrade: "self-code upgrade",
+const M = {
+  /* marcadores de alcance no rótulo do processo */
+  marcaAuth: "require_auth",
+  marcaLeitura: "read",
+  marcaEscrita: "write",
+  marcaEvento: "event",
+  marcaCrossCall: "cross-call",
+  marcaUpgrade: "self-code upgrade",
 
-    /* motivo real da aproximação */
-    razaoIncompleto: (r: string) => `module not read in full (${r})`,
-    razaoSubIndireto: "call_indirect in this export's subgraph",
-    razaoSubDegradado: "degraded function body in this export's subgraph",
-    razaoTodosIndireto: "call_indirect in the subgraph of all these exports",
-    razaoTodosDegradado: "degraded function body in the subgraph of all these exports",
-    razaoCurtaIndireto: "call_indirect",
-    razaoCurtaDegradado: "degraded body",
-    razaoCurtaIncompleto: "module not read in full",
+  /* motivo real da aproximação */
+  razaoIncompleto: (r: string) => `module not read in full (${r})`,
+  razaoSubIndireto: "call_indirect in this export's subgraph",
+  razaoSubDegradado: "degraded function body in this export's subgraph",
+  razaoTodosIndireto: "call_indirect in the subgraph of all these exports",
+  razaoTodosDegradado: "degraded function body in the subgraph of all these exports",
+  razaoCurtaIndireto: "call_indirect",
+  razaoCurtaDegradado: "degraded body",
+  razaoCurtaIncompleto: "module not read in full",
 
-    /* avisos no rótulo */
-    avisoHelper: "⚠ † = via shared helper, tier C",
-    avisoEp: (razao: string) => `⚠ ${razao}: the negative stops being sound`,
+  /* avisos no rótulo */
+  avisoHelper: "⚠ † = via shared helper, tier C",
+  avisoEp: (razao: string) => `⚠ ${razao}: the negative stops being sound`,
 
-    /* corpo do rótulo do processo */
-    semNome: (idx: number) => `export with no readable name (funcIdx ${idx})`,
-    corpoComMarcas: (nome: string, marcas: string) => `${nome} — reaches (hops to host fn): ${marcas}`,
-    corpoSemMarcas: (nome: string, n: number) =>
-      `${nome} — reaches ${n} host function(s), none from auth, storage, event, cross-call or upgrade`,
-    corpoSemAlcance: (nome: string) => `${nome} — no host function reached`,
+  /* corpo do rótulo do processo */
+  semNome: (idx: number) => `export with no readable name (funcIdx ${idx})`,
+  corpoComMarcas: (nome: string, marcas: string) => `${nome} — reaches (hops to host fn): ${marcas}`,
+  corpoSemMarcas: (nome: string, n: number) =>
+    `${nome} — reaches ${n} host function(s), none from auth, storage, event, cross-call or upgrade`,
+  corpoSemAlcance: (nome: string) => `${nome} — no host function reached`,
 
-    /* entidades externas */
-    extAnonimo: "Anonymous invoker — any address",
-    extAutorizado: "Authenticated invoker — Address required by require_auth* on at least one reachable path",
-    extDeployer: "Deployer — same transaction as the deployment (atomic constructor, CAP-0058)",
-    extHost: "Soroban host — invokes the reserved entrypoints (__ prefix, CAP-0058)",
-    extObservador: "Off-chain consumer of the event stream — getEvents",
+  /* entidades externas */
+  extAnonimo: "Anonymous invoker — any address",
+  extAutorizado: "Authenticated invoker — Address required by require_auth* on at least one reachable path",
+  extDeployer: "Deployer — same transaction as the deployment (atomic constructor, CAP-0058)",
+  extHost: "Soroban host — invokes the reserved entrypoints (__ prefix, CAP-0058)",
+  extObservador: "Off-chain consumer of the event stream — getEvents",
 
-    /* arestas */
-    arDeploy: "deploy — atomic invocation",
-    arCheckAuth: "authorization check",
-    arReservada: "reserved invocation by the host",
-    arComAuth: "invokes — require_auth reachable",
-    arSemAuthSolida: "invokes — no authorization check within reach (sound for this call graph)",
-    arSemAuthFraca: (razao: string) => `invokes — no authorization check within reach (NOT sound: ${razao})`,
-    arChave: (conf: string) => `inferred key — confidence ${conf}`,
-    arLeituraEscrita: "reaches read and write",
-    arEscrita: "reaches write",
-    arLeitura: "reaches read",
-    arCrossCall: (fns: string) => `reaches ${fns}`,
-    arEvento: "reaches contract_event",
+  /* arestas */
+  arDeploy: "deploy — atomic invocation",
+  arCheckAuth: "authorization check",
+  arReservada: "reserved invocation by the host",
+  arComAuth: "invokes — require_auth reachable",
+  arSemAuthSolida: "invokes — no authorization check within reach (sound for this call graph)",
+  arSemAuthFraca: (razao: string) => `invokes — no authorization check within reach (NOT sound: ${razao})`,
+  arChave: (conf: string) => `inferred key — confidence ${conf}`,
+  arLeituraEscrita: "reaches read and write",
+  arEscrita: "reaches write",
+  arLeitura: "reaches read",
+  arCrossCall: (fns: string) => `reaches ${fns}`,
+  arEvento: "reaches contract_event",
 
-    /* data stores */
-    storeComChaves: "Contract storage",
-    storeSemChaves: "Contract storage — keys not inferred",
-    chave: (k: string, certa: boolean) => `${k} (${certa ? "certain" : "likely"})`,
+  /* data stores */
+  storeComChaves: "Contract storage",
+  storeSemChaves: "Contract storage — keys not inferred",
+  chave: (k: string, certa: boolean) => `${k} (${certa ? "certain" : "likely"})`,
 
-    /* outro contrato */
-    outroContrato: "Another contract — address resolved at runtime, not determinable from the bytecode",
+  /* outro contrato */
+  outroContrato: "Another contract — address resolved at runtime, not determinable from the bytecode",
 
-    /* fronteiras */
-    tbExterno: "Outside the contract — untrusted actors",
-    tbAuth: "require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap",
-    tbAberto: (forca: string) => `No authorization boundary — no path reaches require_auth* in this module (${forca})`,
-    forcaSolida: "sound for this call graph",
-    forcaNaoSolida: (razao: string) => `NOT sound: ${razao}`,
-    forcaParcial: (n: number, total: number) =>
-      `sound for this call graph, except in the ${n} of ${total} nodes flagged as incomplete`,
-    tbCiclo: "Lifecycle — invoked by the deployment or by the host, not by an arbitrary caller",
-    tbCrossCall: "Third-party code — reached through call/try_call",
+  /* fronteiras */
+  tbExterno: "Outside the contract — untrusted actors",
+  tbAuth: "require_auth* reachable on some path — access control (admin-shaped) and self-authorization (caller authorizing its own address) are both inside; the name-shape split is in the threat model's Spoofing gap",
+  tbAberto: (forca: string) => `No authorization boundary — no path reaches require_auth* in this module (${forca})`,
+  forcaSolida: "sound for this call graph",
+  forcaNaoSolida: (razao: string) => `NOT sound: ${razao}`,
+  forcaParcial: (n: number, total: number) =>
+    `sound for this call graph, except in the ${n} of ${total} nodes flagged as incomplete`,
+  tbCiclo: "Lifecycle — invoked by the deployment or by the host, not by an arbitrary caller",
+  tbCrossCall: "Third-party code — reached through call/try_call",
 
-    /* lacuna */
-    semSuperficie: "No exported entrypoint in the analyzed WASM — there is no surface to diagram",
+  /* lacuna */
+  semSuperficie: "No exported entrypoint in the analyzed WASM — there is no surface to diagram",
 
-    /* cabeçalho do mermaid */
-    cabecalho: "%% soroguard — data-flow diagram derived from the deployed WASM",
-    procedencia: (id: string, rede: string, data: string) =>
-      `%% contract ${id} · network ${rede} · generated at ${data}`,
-    callGraphCompleto: (n: number) => `%% call graph: complete across ${n} entrypoint(s)`,
-    callGraphIncompleto: (razao: string, n: number, total: number) =>
-      `%% call graph: INCOMPLETE (${razao}) in ${n} of ${total} entrypoint(s) — only in those does the negative stop being sound`,
-    legendaSaltos: "%% legend: reaches X n = there is a path of n hop(s) from the export to host function X.",
-    legendaDaga: (limiar: number) =>
-      `%% † = path longer than ${limiar} hops. The positive is over-approximate (tier C): it probably goes` +
-      ` through a shared helper and the host function may sit on a branch this entrypoint never executes.` +
-      ` Confirm before treating it as a finding. Same threshold and same hop count as detect.ts.`,
-  },
-  pt: {
-    marcaAuth: "require_auth",
-    marcaLeitura: "leitura",
-    marcaEscrita: "escrita",
-    marcaEvento: "evento",
-    marcaCrossCall: "cross-call",
-    marcaUpgrade: "upgrade do próprio código",
-
-    razaoIncompleto: (r: string) => `módulo não lido por inteiro (${r})`,
-    razaoSubIndireto: "call_indirect no subgrafo deste export",
-    razaoSubDegradado: "corpo de função degradado no subgrafo deste export",
-    razaoTodosIndireto: "call_indirect no subgrafo de todos estes exports",
-    razaoTodosDegradado: "corpo de função degradado no subgrafo de todos estes exports",
-    razaoCurtaIndireto: "call_indirect",
-    razaoCurtaDegradado: "corpo degradado",
-    razaoCurtaIncompleto: "módulo não lido por inteiro",
-
-    avisoHelper: "⚠ † = via helper compartilhado, nível C",
-    avisoEp: (razao: string) => `⚠ ${razao}: a negativa deixa de ser sólida`,
-
-    semNome: (idx: number) => `export sem nome legível (funcIdx ${idx})`,
-    corpoComMarcas: (nome: string, marcas: string) => `${nome} — alcança (saltos até a host fn): ${marcas}`,
-    corpoSemMarcas: (nome: string, n: number) =>
-      `${nome} — alcança ${n} host function(s), nenhuma de auth, storage, evento, cross-call ou upgrade`,
-    corpoSemAlcance: (nome: string) => `${nome} — nenhuma host function alcançada`,
-
-    extAnonimo: "Invocador anônimo — qualquer endereço",
-    extAutorizado: "Invocador autenticado — Address exigido por require_auth* em pelo menos um caminho alcançável",
-    extDeployer: "Deployer — mesma transação do deploy (constructor atômico, CAP-0058)",
-    extHost: "Host Soroban — invoca os entrypoints reservados (prefixo __, CAP-0058)",
-    extObservador: "Consumidor off-chain do stream de eventos — getEvents",
-
-    arDeploy: "deploy — invocação atômica",
-    arCheckAuth: "verificação de autorização",
-    arReservada: "invocação reservada pelo host",
-    arComAuth: "invoca — require_auth alcançável",
-    arSemAuthSolida: "invoca — nenhuma checagem de autorização no alcance (sólida para este call graph)",
-    arSemAuthFraca: (razao: string) => `invoca — nenhuma checagem de autorização no alcance (NÃO sólida: ${razao})`,
-    arChave: (conf: string) => `chave inferida — confiança ${conf}`,
-    arLeituraEscrita: "alcança leitura e escrita",
-    arEscrita: "alcança escrita",
-    arLeitura: "alcança leitura",
-    arCrossCall: (fns: string) => `alcança ${fns}`,
-    arEvento: "alcança contract_event",
-
-    storeComChaves: "Storage do contrato",
-    storeSemChaves: "Storage do contrato — chaves não inferidas",
-    chave: (k: string, certa: boolean) => `${k} (${certa ? "certa" : "provável"})`,
-
-    outroContrato: "Outro contrato — endereço resolvido em runtime, não determinável do bytecode",
-
-    tbExterno: "Fora do contrato — atores não confiáveis",
-    tbAuth: "require_auth* alcançável em algum caminho — controle de acesso (forma administrativa) e autoautorização (o chamador autorizando o próprio endereço) estão os dois aqui; a separação por forma do nome está na lacuna de Spoofing do threat model",
-    tbAberto: (forca: string) => `Sem fronteira de autorização — nenhum caminho alcança require_auth* neste módulo (${forca})`,
-    forcaSolida: "sólida para este call graph",
-    forcaNaoSolida: (razao: string) => `NÃO sólida: ${razao}`,
-    forcaParcial: (n: number, total: number) =>
-      `sólida para este call graph, exceto nos ${n} de ${total} nós marcados como incompletos`,
-    tbCiclo: "Ciclo de vida — invocado pelo deploy ou pelo host, não por chamador arbitrário",
-    tbCrossCall: "Código de terceiros — alcançado por call/try_call",
-
-    semSuperficie: "Nenhum entrypoint exportado no WASM analisado — não há superfície a diagramar",
-
-    cabecalho: "%% soroguard — data-flow diagram derivado do WASM deployado",
-    procedencia: (id: string, rede: string, data: string) =>
-      `%% contrato ${id} · rede ${rede} · gerado em ${data}`,
-    callGraphCompleto: (n: number) => `%% call graph: completo nos ${n} entrypoint(s)`,
-    callGraphIncompleto: (razao: string, n: number, total: number) =>
-      `%% call graph: INCOMPLETO (${razao}) em ${n} de ${total} entrypoint(s) — só nesses a negativa deixa de ser sólida`,
-    legendaSaltos: "%% legenda: alcança X n = existe caminho de n salto(s) do export até a host function X.",
-    legendaDaga: (limiar: number) =>
-      `%% † = caminho acima de ${limiar} saltos. A positiva é super-aproximada (nível C): provavelmente passa por` +
-      ` helper compartilhado e a host function pode estar num ramo que este entrypoint nunca executa.` +
-      ` Confirmar antes de tratar como achado. Mesmo limiar e mesma contagem de saltos de detect.ts.`,
-  },
-});
+  /* cabeçalho do mermaid */
+  cabecalho: "%% soroguard — data-flow diagram derived from the deployed WASM",
+  procedencia: (id: string, rede: string, data: string) =>
+    `%% contract ${id} · network ${rede} · generated at ${data}`,
+  callGraphCompleto: (n: number) => `%% call graph: complete across ${n} entrypoint(s)`,
+  callGraphIncompleto: (razao: string, n: number, total: number) =>
+    `%% call graph: INCOMPLETE (${razao}) in ${n} of ${total} entrypoint(s) — only in those does the negative stop being sound`,
+  legendaSaltos: "%% legend: reaches X n = there is a path of n hop(s) from the export to host function X.",
+  legendaDaga: (limiar: number) =>
+    `%% † = path longer than ${limiar} hops. The positive is over-approximate (tier C): it probably goes` +
+    ` through a shared helper and the host function may sit on a branch this entrypoint never executes.` +
+    ` Confirm before treating it as a finding. Same threshold and same hop count as detect.ts.`,
+};
 
 /**
  * Motivo REAL da incompletude, no escopo pedido. `callGraphComplete` cai por três causas
