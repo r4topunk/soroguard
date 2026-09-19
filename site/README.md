@@ -22,6 +22,18 @@ pnpm preview    # serve dist/ (http://localhost:4173)
 
 No `vercel.json` is needed. This folder is its own pnpm project (not a workspace), and it is kept out of the npm package by the root `package.json` `files` whitelist.
 
+## Domain and social preview
+
+The site URL lives in one place: `site/.env` → `VITE_SITE_URL=https://soroguard.r4to.com` (no trailing slash). At build time Vite substitutes `%VITE_SITE_URL%` in `index.html`, which sets `og:url`, `og:image` and `twitter:image`. To change the domain, edit that line. You can also set `VITE_SITE_URL` in the Vercel project's environment variables, which overrides `.env` for that environment (e.g. previews). Check with `grep og:image dist/index.html` after `pnpm build`.
+
+The share image is `public/og.png` (1200×630, English). It is generated from `og/og.html`. `og/` is not part of the build; only `public/og.png` ships.
+
+```sh
+pnpm og   # re-render public/og.png with the cached Playwright Chromium (needs network for Google Fonts)
+```
+
+`og/render.mjs` looks for the newest Chromium under the Playwright cache. Set `CHROMIUM_PATH` to use another browser. If the web fonts fail to load, the script refuses to render rather than fall back to system fonts.
+
 ## Layout
 
 - `src/strings.ts`: all PT/EN copy.
