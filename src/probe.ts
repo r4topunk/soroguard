@@ -393,7 +393,6 @@ function comPrazo<T>(p: Promise<T>, ms: number, aoEstourar: () => T): Promise<T>
   let timer: NodeJS.Timeout;
   const prazo = new Promise<T>((res) => {
     timer = setTimeout(() => res(aoEstourar()), ms);
-    timer.unref?.();
   });
   void p.catch(() => {});
   return Promise.race([p, prazo]).finally(() => clearTimeout(timer!));

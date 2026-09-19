@@ -84,7 +84,6 @@ function comPrazo<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
   const prazo = new Promise<never>((_, rej) => {
     timer = setTimeout(() => rej(new Error(M.timeout(Math.round(ms / 1000)))), ms);
-    timer.unref?.();
   });
   // A promessa perdedora continua viva; engolir a rejeição evita unhandled rejection.
   void p.catch(() => {});
